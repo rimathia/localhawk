@@ -1,0 +1,11 @@
+[package]
+name = "magic-proxy-gui"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+magic-proxy-core = { path = "../magic-proxy-core" }
+iced = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread"] }
+log = { workspace = true }
+env_logger = "0.11"

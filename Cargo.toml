@@ -1,0 +1,24 @@
+[workspace]
+members = [
+    "magic-proxy-core",
+    "magic-proxy-gui",
+    "magic-proxy-cli"
+]
+resolver = "2"
+edition = "2024"
+
+[workspace.dependencies]
+# Shared dependencies with consistent versions
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["time"] }
+printpdf = { version = "0.5", features = ["embedded_images"] }
+time = { version = "0.3", features = ["serde", "formatting"] }
+lazy_static = "1.4"
+log = "0.4"
+iced = "0.13"
+clap = "4.0"
+regex = "1.10"
+ngrammatic = "0.4"
+ord_subset = "3.1"

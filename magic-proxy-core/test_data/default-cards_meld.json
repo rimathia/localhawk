@@ -1,0 +1,1450 @@
+[
+	{
+		"object": "card",
+		"id": "02aea379-b444-46a3-82f4-3038f698d4f4",
+		"oracle_id": "c396db03-bf11-4e20-b630-4f9aa8fd78da",
+		"multiverse_ids": [
+			588289
+		],
+		"arena_id": 82724,
+		"tcgplayer_id": 448411,
+		"name": "The Mightstone and Weakstone",
+		"lang": "en",
+		"released_at": "2022-11-18",
+		"uri": "https://api.scryfall.com/cards/02aea379-b444-46a3-82f4-3038f698d4f4",
+		"scryfall_uri": "https://scryfall.com/card/bro/238a/the-mightstone-and-weakstone?utm_source=api",
+		"layout": "meld",
+		"highres_image": true,
+		"image_status": "highres_scan",
+		"image_uris": {
+			"small": "https://cards.scryfall.io/small/front/0/2/02aea379-b444-46a3-82f4-3038f698d4f4.jpg?1667858104",
+			"normal": "https://cards.scryfall.io/normal/front/0/2/02aea379-b444-46a3-82f4-3038f698d4f4.jpg?1667858104",
+			"large": "https://cards.scryfall.io/large/front/0/2/02aea379-b444-46a3-82f4-3038f698d4f4.jpg?1667858104",
+			"png": "https://cards.scryfall.io/png/front/0/2/02aea379-b444-46a3-82f4-3038f698d4f4.png?1667858104",
+			"art_crop": "https://cards.scryfall.io/art_crop/front/0/2/02aea379-b444-46a3-82f4-3038f698d4f4.jpg?1667858104",
+			"border_crop": "https://cards.scryfall.io/border_crop/front/0/2/02aea379-b444-46a3-82f4-3038f698d4f4.jpg?1667858104"
+		},
+		"mana_cost": "{5}",
+		"cmc": 5.0,
+		"type_line": "Legendary Artifact — Powerstone",
+		"oracle_text": "When The Mightstone and Weakstone enters the battlefield, choose one —\n• Draw two cards.\n• Target creature gets -5/-5 until end of turn.\n{T}: Add {C}{C}. This mana can't be spent to cast nonartifact spells.\n(Melds with Urza, Lord Protector.)",
+		"colors": [],
+		"color_identity": [],
+		"keywords": [],
+		"produced_mana": [
+			"C"
+		],
+		"all_parts": [
+			{
+				"object": "related_card",
+				"id": "40a01679-3224-427e-bd1d-b797b0ab68b7",
+				"component": "meld_result",
+				"name": "Urza, Planeswalker",
+				"type_line": "Legendary Planeswalker — Urza",
+				"uri": "https://api.scryfall.com/cards/40a01679-3224-427e-bd1d-b797b0ab68b7"
+			},
+			{
+				"object": "related_card",
+				"id": "02aea379-b444-46a3-82f4-3038f698d4f4",
+				"component": "meld_part",
+				"name": "The Mightstone and Weakstone",
+				"type_line": "Legendary Artifact — Powerstone",
+				"uri": "https://api.scryfall.com/cards/02aea379-b444-46a3-82f4-3038f698d4f4"
+			},
+			{
+				"object": "related_card",
+				"id": "8aefe8bd-216a-4ec1-9362-3f9dbf7fd083",
+				"component": "meld_part",
+				"name": "Urza, Lord Protector",
+				"type_line": "Legendary Creature — Human Artificer",
+				"uri": "https://api.scryfall.com/cards/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083"
+			}
+		],
+		"legalities": {
+			"standard": "legal",
+			"future": "legal",
+			"historic": "legal",
+			"gladiator": "legal",
+			"pioneer": "legal",
+			"explorer": "legal",
+			"modern": "legal",
+			"legacy": "legal",
+			"pauper": "not_legal",
+			"vintage": "legal",
+			"penny": "not_legal",
+			"commander": "legal",
+			"brawl": "legal",
+			"historicbrawl": "legal",
+			"alchemy": "legal",
+			"paupercommander": "not_legal",
+			"duel": "legal",
+			"oldschool": "not_legal",
+			"premodern": "not_legal"
+		},
+		"games": [
+			"paper",
+			"mtgo",
+			"arena"
+		],
+		"reserved": false,
+		"foil": true,
+		"nonfoil": true,
+		"finishes": [
+			"nonfoil",
+			"foil"
+		],
+		"oversized": false,
+		"promo": false,
+		"reprint": false,
+		"variation": false,
+		"set_id": "4219a14e-6701-4ddd-a185-21dc054ab19b",
+		"set": "bro",
+		"set_name": "The Brothers' War",
+		"set_type": "expansion",
+		"set_uri": "https://api.scryfall.com/sets/4219a14e-6701-4ddd-a185-21dc054ab19b",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set\u0026q=e%3Abro\u0026unique=prints",
+		"scryfall_set_uri": "https://scryfall.com/sets/bro?utm_source=api",
+		"rulings_uri": "https://api.scryfall.com/cards/02aea379-b444-46a3-82f4-3038f698d4f4/rulings",
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released\u0026q=oracleid%3Ac396db03-bf11-4e20-b630-4f9aa8fd78da\u0026unique=prints",
+		"collector_number": "238a",
+		"digital": false,
+		"rarity": "rare",
+		"card_back_id": "906fcd6b-718e-49a6-8d60-0dbaa07a05d6",
+		"artist": "Ryan Pancoast",
+		"artist_ids": [
+			"89cc9475-dda2-4d13-bf88-54b92867a25c"
+		],
+		"illustration_id": "f8e05098-615d-4720-b674-d3323fd23118",
+		"border_color": "black",
+		"frame": "2015",
+		"frame_effects": [
+			"legendary"
+		],
+		"security_stamp": "oval",
+		"full_art": false,
+		"textless": false,
+		"booster": true,
+		"story_spotlight": false,
+		"edhrec_rank": 6509,
+		"prices": {
+			"usd": "5.15",
+			"usd_foil": "6.28",
+			"usd_etched": null,
+			"eur": null,
+			"eur_foil": null,
+			"tix": null
+		},
+		"related_uris": {
+			"gatherer": "https://gatherer.wizards.com/Pages/Card/Details.aspx?multiverseid=588289",
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article\u0026game=magic\u0026partner=scryfall\u0026q=The+Mightstone+and+Weakstone\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck\u0026game=magic\u0026partner=scryfall\u0026q=The+Mightstone+and+Weakstone\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"edhrec": "https://edhrec.com/route/?cc=The+Mightstone+and+Weakstone"
+		}
+	},
+	{
+		"object": "card",
+		"id": "600259ab-2bb7-4e09-b957-b07dbd37a521",
+		"oracle_id": "df2af646-3e5b-43a3-8f3e-50565889f456",
+		"multiverse_ids": [],
+		"tcgplayer_id": 454092,
+		"name": "Urza, Lord Protector",
+		"lang": "en",
+		"released_at": "2022-11-18",
+		"uri": "https://api.scryfall.com/cards/600259ab-2bb7-4e09-b957-b07dbd37a521",
+		"scryfall_uri": "https://scryfall.com/card/pbro/225s/urza-lord-protector?utm_source=api",
+		"layout": "meld",
+		"highres_image": true,
+		"image_status": "highres_scan",
+		"image_uris": {
+			"small": "https://cards.scryfall.io/small/front/6/0/600259ab-2bb7-4e09-b957-b07dbd37a521.jpg?1669725513",
+			"normal": "https://cards.scryfall.io/normal/front/6/0/600259ab-2bb7-4e09-b957-b07dbd37a521.jpg?1669725513",
+			"large": "https://cards.scryfall.io/large/front/6/0/600259ab-2bb7-4e09-b957-b07dbd37a521.jpg?1669725513",
+			"png": "https://cards.scryfall.io/png/front/6/0/600259ab-2bb7-4e09-b957-b07dbd37a521.png?1669725513",
+			"art_crop": "https://cards.scryfall.io/art_crop/front/6/0/600259ab-2bb7-4e09-b957-b07dbd37a521.jpg?1669725513",
+			"border_crop": "https://cards.scryfall.io/border_crop/front/6/0/600259ab-2bb7-4e09-b957-b07dbd37a521.jpg?1669725513"
+		},
+		"mana_cost": "{1}{W}{U}",
+		"cmc": 3.0,
+		"type_line": "Legendary Creature — Human Artificer",
+		"oracle_text": "Artifact, instant, and sorcery spells you cast cost {1} less to cast.\n{7}: If you both own and control Urza, Lord Protector and an artifact named The Mightstone and Weakstone, exile them, then meld them into Urza, Planeswalker. Activate only as a sorcery.",
+		"power": "2",
+		"toughness": "4",
+		"colors": [
+			"U",
+			"W"
+		],
+		"color_identity": [
+			"U",
+			"W"
+		],
+		"keywords": [
+			"Meld"
+		],
+		"all_parts": [
+			{
+				"object": "related_card",
+				"id": "7e44b30f-aed6-47af-8b6c-0669c644e46f",
+				"component": "meld_result",
+				"name": "Urza, Planeswalker",
+				"type_line": "Legendary Planeswalker — Urza",
+				"uri": "https://api.scryfall.com/cards/7e44b30f-aed6-47af-8b6c-0669c644e46f"
+			},
+			{
+				"object": "related_card",
+				"id": "bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24",
+				"component": "meld_part",
+				"name": "The Mightstone and Weakstone",
+				"type_line": "Legendary Artifact — Powerstone",
+				"uri": "https://api.scryfall.com/cards/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24"
+			},
+			{
+				"object": "related_card",
+				"id": "600259ab-2bb7-4e09-b957-b07dbd37a521",
+				"component": "meld_part",
+				"name": "Urza, Lord Protector",
+				"type_line": "Legendary Creature — Human Artificer",
+				"uri": "https://api.scryfall.com/cards/600259ab-2bb7-4e09-b957-b07dbd37a521"
+			}
+		],
+		"legalities": {
+			"standard": "legal",
+			"future": "legal",
+			"historic": "legal",
+			"gladiator": "legal",
+			"pioneer": "legal",
+			"explorer": "legal",
+			"modern": "legal",
+			"legacy": "legal",
+			"pauper": "not_legal",
+			"vintage": "legal",
+			"penny": "not_legal",
+			"commander": "legal",
+			"brawl": "legal",
+			"historicbrawl": "legal",
+			"alchemy": "legal",
+			"paupercommander": "not_legal",
+			"duel": "legal",
+			"oldschool": "not_legal",
+			"premodern": "not_legal"
+		},
+		"games": [
+			"paper"
+		],
+		"reserved": false,
+		"foil": true,
+		"nonfoil": false,
+		"finishes": [
+			"foil"
+		],
+		"oversized": false,
+		"promo": true,
+		"reprint": true,
+		"variation": false,
+		"set_id": "7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set": "pbro",
+		"set_name": "The Brothers' War Promos",
+		"set_type": "promo",
+		"set_uri": "https://api.scryfall.com/sets/7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set\u0026q=e%3Apbro\u0026unique=prints",
+		"scryfall_set_uri": "https://scryfall.com/sets/pbro?utm_source=api",
+		"rulings_uri": "https://api.scryfall.com/cards/600259ab-2bb7-4e09-b957-b07dbd37a521/rulings",
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released\u0026q=oracleid%3Adf2af646-3e5b-43a3-8f3e-50565889f456\u0026unique=prints",
+		"collector_number": "225s",
+		"digital": false,
+		"rarity": "mythic",
+		"card_back_id": "58a4215b-9f3d-40d4-bc05-d8d3cc2354d9",
+		"artist": "Ryan Pancoast",
+		"artist_ids": [
+			"89cc9475-dda2-4d13-bf88-54b92867a25c"
+		],
+		"illustration_id": "c1abe983-d141-4884-9812-2593773f1a59",
+		"border_color": "black",
+		"frame": "2015",
+		"frame_effects": [
+			"legendary"
+		],
+		"security_stamp": "oval",
+		"full_art": false,
+		"textless": false,
+		"booster": false,
+		"story_spotlight": false,
+		"promo_types": [
+			"prerelease",
+			"datestamped"
+		],
+		"edhrec_rank": 7316,
+		"prices": {
+			"usd": null,
+			"usd_foil": "55.16",
+			"usd_etched": null,
+			"eur": null,
+			"eur_foil": null,
+			"tix": null
+		},
+		"related_uris": {
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Lord+Protector\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Lord+Protector\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"edhrec": "https://edhrec.com/route/?cc=Urza%2C+Lord+Protector"
+		}
+	},
+	{
+		"object": "card",
+		"id": "40a01679-3224-427e-bd1d-b797b0ab68b7",
+		"oracle_id": "759406d7-44ae-4260-9ef5-3bb2c92f751a",
+		"multiverse_ids": [
+			588290
+		],
+		"name": "Urza, Planeswalker",
+		"lang": "en",
+		"released_at": "2022-11-18",
+		"uri": "https://api.scryfall.com/cards/40a01679-3224-427e-bd1d-b797b0ab68b7",
+		"scryfall_uri": "https://scryfall.com/card/bro/238b/urza-planeswalker?utm_source=api",
+		"layout": "meld",
+		"highres_image": true,
+		"image_status": "highres_scan",
+		"image_uris": {
+			"small": "https://cards.scryfall.io/small/front/4/0/40a01679-3224-427e-bd1d-b797b0ab68b7.jpg?1671285332",
+			"normal": "https://cards.scryfall.io/normal/front/4/0/40a01679-3224-427e-bd1d-b797b0ab68b7.jpg?1671285332",
+			"large": "https://cards.scryfall.io/large/front/4/0/40a01679-3224-427e-bd1d-b797b0ab68b7.jpg?1671285332",
+			"png": "https://cards.scryfall.io/png/front/4/0/40a01679-3224-427e-bd1d-b797b0ab68b7.png?1671285332",
+			"art_crop": "https://cards.scryfall.io/art_crop/front/4/0/40a01679-3224-427e-bd1d-b797b0ab68b7.jpg?1671285332",
+			"border_crop": "https://cards.scryfall.io/border_crop/front/4/0/40a01679-3224-427e-bd1d-b797b0ab68b7.jpg?1671285332"
+		},
+		"mana_cost": "",
+		"cmc": 8.0,
+		"type_line": "Legendary Planeswalker — Urza",
+		"oracle_text": "You may activate the loyalty abilities of Urza, Planeswalker twice each turn rather than only once.\n+2: Artifact, instant, and sorcery spells you cast this turn cost {2} less to cast. You gain 2 life.\n+1: Draw two cards, then discard a card.\n0: Create two 1/1 colorless Soldier artifact creature tokens.\n−3: Exile target nonland permanent.\n−10: Artifacts and planeswalkers you control gain indestructible until end of turn. Destroy all nonland permanents.",
+		"loyalty": "7",
+		"colors": [
+			"U",
+			"W"
+		],
+		"color_indicator": [
+			"U",
+			"W"
+		],
+		"color_identity": [
+			"U",
+			"W"
+		],
+		"keywords": [],
+		"all_parts": [
+			{
+				"object": "related_card",
+				"id": "83981313-ff55-4030-ac82-d6a3087cf675",
+				"component": "token",
+				"name": "Soldier",
+				"type_line": "Token Artifact Creature — Soldier",
+				"uri": "https://api.scryfall.com/cards/83981313-ff55-4030-ac82-d6a3087cf675"
+			},
+			{
+				"object": "related_card",
+				"id": "40a01679-3224-427e-bd1d-b797b0ab68b7",
+				"component": "meld_result",
+				"name": "Urza, Planeswalker",
+				"type_line": "Legendary Planeswalker — Urza",
+				"uri": "https://api.scryfall.com/cards/40a01679-3224-427e-bd1d-b797b0ab68b7"
+			},
+			{
+				"object": "related_card",
+				"id": "02aea379-b444-46a3-82f4-3038f698d4f4",
+				"component": "meld_part",
+				"name": "The Mightstone and Weakstone",
+				"type_line": "Legendary Artifact — Powerstone",
+				"uri": "https://api.scryfall.com/cards/02aea379-b444-46a3-82f4-3038f698d4f4"
+			},
+			{
+				"object": "related_card",
+				"id": "8aefe8bd-216a-4ec1-9362-3f9dbf7fd083",
+				"component": "meld_part",
+				"name": "Urza, Lord Protector",
+				"type_line": "Legendary Creature — Human Artificer",
+				"uri": "https://api.scryfall.com/cards/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083"
+			}
+		],
+		"legalities": {
+			"standard": "legal",
+			"future": "legal",
+			"historic": "legal",
+			"gladiator": "legal",
+			"pioneer": "legal",
+			"explorer": "legal",
+			"modern": "legal",
+			"legacy": "legal",
+			"pauper": "not_legal",
+			"vintage": "legal",
+			"penny": "not_legal",
+			"commander": "legal",
+			"brawl": "legal",
+			"historicbrawl": "legal",
+			"alchemy": "legal",
+			"paupercommander": "not_legal",
+			"duel": "legal",
+			"oldschool": "not_legal",
+			"premodern": "not_legal"
+		},
+		"games": [
+			"paper",
+			"mtgo",
+			"arena"
+		],
+		"reserved": false,
+		"foil": true,
+		"nonfoil": true,
+		"finishes": [
+			"nonfoil",
+			"foil"
+		],
+		"oversized": false,
+		"promo": false,
+		"reprint": false,
+		"variation": false,
+		"set_id": "4219a14e-6701-4ddd-a185-21dc054ab19b",
+		"set": "bro",
+		"set_name": "The Brothers' War",
+		"set_type": "expansion",
+		"set_uri": "https://api.scryfall.com/sets/4219a14e-6701-4ddd-a185-21dc054ab19b",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set\u0026q=e%3Abro\u0026unique=prints",
+		"scryfall_set_uri": "https://scryfall.com/sets/bro?utm_source=api",
+		"rulings_uri": "https://api.scryfall.com/cards/40a01679-3224-427e-bd1d-b797b0ab68b7/rulings",
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released\u0026q=oracleid%3A759406d7-44ae-4260-9ef5-3bb2c92f751a\u0026unique=prints",
+		"collector_number": "238b",
+		"digital": false,
+		"rarity": "mythic",
+		"card_back_id": "0aeebaf5-8c7d-4636-9e82-8c27447861f7",
+		"artist": "Ryan Pancoast",
+		"artist_ids": [
+			"89cc9475-dda2-4d13-bf88-54b92867a25c"
+		],
+		"illustration_id": "8f1298bb-5385-4d55-af66-81ad553e67f9",
+		"border_color": "black",
+		"frame": "2015",
+		"full_art": false,
+		"textless": false,
+		"booster": true,
+		"story_spotlight": false,
+		"edhrec_rank": 22679,
+		"prices": {
+			"usd": null,
+			"usd_foil": null,
+			"usd_etched": null,
+			"eur": null,
+			"eur_foil": null,
+			"tix": null
+		},
+		"related_uris": {
+			"gatherer": "https://gatherer.wizards.com/Pages/Card/Details.aspx?multiverseid=588290",
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Planeswalker\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Planeswalker\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"edhrec": "https://edhrec.com/route/?cc=Urza%2C+Planeswalker"
+		}
+	},
+	{
+		"object": "card",
+		"id": "6e1b4188-3c9e-4243-9120-8dc92c326dbd",
+		"oracle_id": "0c552616-50a8-4a76-95f1-41d9d05108c5",
+		"multiverse_ids": [],
+		"name": "Urza, Lord Protector // Urza, Lord Protector",
+		"lang": "en",
+		"released_at": "2022-11-18",
+		"uri": "https://api.scryfall.com/cards/6e1b4188-3c9e-4243-9120-8dc92c326dbd",
+		"scryfall_uri": "https://scryfall.com/card/abro/41s/urza-lord-protector-urza-lord-protector?utm_source=api",
+		"layout": "art_series",
+		"highres_image": false,
+		"image_status": "lowres",
+		"cmc": 0.0,
+		"type_line": "Card // Card",
+		"color_identity": [],
+		"keywords": [],
+		"card_faces": [
+			{
+				"object": "card_face",
+				"name": "Urza, Lord Protector",
+				"mana_cost": "",
+				"type_line": "Card",
+				"oracle_text": "",
+				"colors": [],
+				"artist": "Ryan Pancoast",
+				"artist_id": "89cc9475-dda2-4d13-bf88-54b92867a25c",
+				"illustration_id": "4f1daffa-a82d-41ad-a0be-c97d836cd09e",
+				"image_uris": {
+					"small": "https://cards.scryfall.io/small/front/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.jpg?1667942464",
+					"normal": "https://cards.scryfall.io/normal/front/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.jpg?1667942464",
+					"large": "https://cards.scryfall.io/large/front/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.jpg?1667942464",
+					"png": "https://cards.scryfall.io/png/front/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.png?1667942464",
+					"art_crop": "https://cards.scryfall.io/art_crop/front/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.jpg?1667942464",
+					"border_crop": "https://cards.scryfall.io/border_crop/front/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.jpg?1667942464"
+				}
+			},
+			{
+				"object": "card_face",
+				"name": "Urza, Lord Protector",
+				"flavor_name": "",
+				"mana_cost": "",
+				"type_line": "Card",
+				"oracle_text": "",
+				"colors": [],
+				"artist": "Ryan Pancoast",
+				"artist_id": "89cc9475-dda2-4d13-bf88-54b92867a25c",
+				"illustration_id": "2dd80d68-2146-4bdd-a2b9-4f545fb75312",
+				"image_uris": {
+					"small": "https://cards.scryfall.io/small/back/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.jpg?1667942464",
+					"normal": "https://cards.scryfall.io/normal/back/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.jpg?1667942464",
+					"large": "https://cards.scryfall.io/large/back/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.jpg?1667942464",
+					"png": "https://cards.scryfall.io/png/back/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.png?1667942464",
+					"art_crop": "https://cards.scryfall.io/art_crop/back/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.jpg?1667942464",
+					"border_crop": "https://cards.scryfall.io/border_crop/back/6/e/6e1b4188-3c9e-4243-9120-8dc92c326dbd.jpg?1667942464"
+				}
+			}
+		],
+		"legalities": {
+			"standard": "not_legal",
+			"future": "not_legal",
+			"historic": "not_legal",
+			"gladiator": "not_legal",
+			"pioneer": "not_legal",
+			"explorer": "not_legal",
+			"modern": "not_legal",
+			"legacy": "not_legal",
+			"pauper": "not_legal",
+			"vintage": "not_legal",
+			"penny": "not_legal",
+			"commander": "not_legal",
+			"brawl": "not_legal",
+			"historicbrawl": "not_legal",
+			"alchemy": "not_legal",
+			"paupercommander": "not_legal",
+			"duel": "not_legal",
+			"oldschool": "not_legal",
+			"premodern": "not_legal"
+		},
+		"games": [
+			"paper"
+		],
+		"reserved": false,
+		"foil": true,
+		"nonfoil": true,
+		"finishes": [
+			"nonfoil",
+			"foil"
+		],
+		"oversized": false,
+		"promo": false,
+		"reprint": false,
+		"variation": false,
+		"set_id": "6e00ad96-8258-4430-b6ee-040f92bc8d99",
+		"set": "abro",
+		"set_name": "The Brothers' War Art Series",
+		"set_type": "memorabilia",
+		"set_uri": "https://api.scryfall.com/sets/6e00ad96-8258-4430-b6ee-040f92bc8d99",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set\u0026q=e%3Aabro\u0026unique=prints",
+		"scryfall_set_uri": "https://scryfall.com/sets/abro?utm_source=api",
+		"rulings_uri": "https://api.scryfall.com/cards/6e1b4188-3c9e-4243-9120-8dc92c326dbd/rulings",
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released\u0026q=oracleid%3A0c552616-50a8-4a76-95f1-41d9d05108c5\u0026unique=prints",
+		"collector_number": "41s",
+		"digital": false,
+		"rarity": "common",
+		"artist": "Ryan Pancoast",
+		"artist_ids": [
+			"89cc9475-dda2-4d13-bf88-54b92867a25c"
+		],
+		"border_color": "borderless",
+		"frame": "2015",
+		"full_art": false,
+		"textless": false,
+		"booster": false,
+		"story_spotlight": false,
+		"promo_types": [
+			"stamped"
+		],
+		"prices": {
+			"usd": null,
+			"usd_foil": null,
+			"usd_etched": null,
+			"eur": null,
+			"eur_foil": null,
+			"tix": null
+		},
+		"related_uris": {
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Lord+Protector+%2F%2F+Urza%2C+Lord+Protector\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Lord+Protector+%2F%2F+Urza%2C+Lord+Protector\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"edhrec": "https://edhrec.com/route/?cc=Urza%2C+Lord+Protector"
+		}
+	},
+	{
+		"object": "card",
+		"id": "79db740b-96f1-4d74-a19d-0cb6853464e6",
+		"oracle_id": "759406d7-44ae-4260-9ef5-3bb2c92f751a",
+		"multiverse_ids": [],
+		"name": "Urza, Planeswalker",
+		"lang": "en",
+		"released_at": "2022-11-18",
+		"uri": "https://api.scryfall.com/cards/79db740b-96f1-4d74-a19d-0cb6853464e6",
+		"scryfall_uri": "https://scryfall.com/card/pbro/238bp/urza-planeswalker?utm_source=api",
+		"layout": "meld",
+		"highres_image": true,
+		"image_status": "highres_scan",
+		"image_uris": {
+			"small": "https://cards.scryfall.io/small/front/7/9/79db740b-96f1-4d74-a19d-0cb6853464e6.jpg?1669725375",
+			"normal": "https://cards.scryfall.io/normal/front/7/9/79db740b-96f1-4d74-a19d-0cb6853464e6.jpg?1669725375",
+			"large": "https://cards.scryfall.io/large/front/7/9/79db740b-96f1-4d74-a19d-0cb6853464e6.jpg?1669725375",
+			"png": "https://cards.scryfall.io/png/front/7/9/79db740b-96f1-4d74-a19d-0cb6853464e6.png?1669725375",
+			"art_crop": "https://cards.scryfall.io/art_crop/front/7/9/79db740b-96f1-4d74-a19d-0cb6853464e6.jpg?1669725375",
+			"border_crop": "https://cards.scryfall.io/border_crop/front/7/9/79db740b-96f1-4d74-a19d-0cb6853464e6.jpg?1669725375"
+		},
+		"mana_cost": "",
+		"cmc": 8.0,
+		"type_line": "Legendary Planeswalker — Urza",
+		"oracle_text": "You may activate the loyalty abilities of Urza, Planeswalker twice each turn rather than only once.\n+2: Artifact, instant, and sorcery spells you cast this turn cost {2} less to cast. You gain 2 life.\n+1: Draw two cards, then discard a card.\n0: Create two 1/1 colorless Soldier artifact creature tokens.\n−3: Exile target nonland permanent.\n−10: Artifacts and planeswalkers you control gain indestructible until end of turn. Destroy all nonland permanents.",
+		"loyalty": "7",
+		"colors": [
+			"U",
+			"W"
+		],
+		"color_indicator": [
+			"U",
+			"W"
+		],
+		"color_identity": [
+			"U",
+			"W"
+		],
+		"keywords": [],
+		"all_parts": [
+			{
+				"object": "related_card",
+				"id": "83981313-ff55-4030-ac82-d6a3087cf675",
+				"component": "token",
+				"name": "Soldier",
+				"type_line": "Token Artifact Creature — Soldier",
+				"uri": "https://api.scryfall.com/cards/83981313-ff55-4030-ac82-d6a3087cf675"
+			},
+			{
+				"object": "related_card",
+				"id": "7e44b30f-aed6-47af-8b6c-0669c644e46f",
+				"component": "meld_result",
+				"name": "Urza, Planeswalker",
+				"type_line": "Legendary Planeswalker — Urza",
+				"uri": "https://api.scryfall.com/cards/7e44b30f-aed6-47af-8b6c-0669c644e46f"
+			},
+			{
+				"object": "related_card",
+				"id": "bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24",
+				"component": "meld_part",
+				"name": "The Mightstone and Weakstone",
+				"type_line": "Legendary Artifact — Powerstone",
+				"uri": "https://api.scryfall.com/cards/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24"
+			},
+			{
+				"object": "related_card",
+				"id": "600259ab-2bb7-4e09-b957-b07dbd37a521",
+				"component": "meld_part",
+				"name": "Urza, Lord Protector",
+				"type_line": "Legendary Creature — Human Artificer",
+				"uri": "https://api.scryfall.com/cards/600259ab-2bb7-4e09-b957-b07dbd37a521"
+			}
+		],
+		"legalities": {
+			"standard": "legal",
+			"future": "legal",
+			"historic": "legal",
+			"gladiator": "legal",
+			"pioneer": "legal",
+			"explorer": "legal",
+			"modern": "legal",
+			"legacy": "legal",
+			"pauper": "not_legal",
+			"vintage": "legal",
+			"penny": "not_legal",
+			"commander": "legal",
+			"brawl": "legal",
+			"historicbrawl": "legal",
+			"alchemy": "legal",
+			"paupercommander": "not_legal",
+			"duel": "legal",
+			"oldschool": "not_legal",
+			"premodern": "not_legal"
+		},
+		"games": [
+			"paper"
+		],
+		"reserved": false,
+		"foil": true,
+		"nonfoil": true,
+		"finishes": [
+			"nonfoil",
+			"foil"
+		],
+		"oversized": false,
+		"promo": true,
+		"reprint": true,
+		"variation": false,
+		"set_id": "7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set": "pbro",
+		"set_name": "The Brothers' War Promos",
+		"set_type": "promo",
+		"set_uri": "https://api.scryfall.com/sets/7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set\u0026q=e%3Apbro\u0026unique=prints",
+		"scryfall_set_uri": "https://scryfall.com/sets/pbro?utm_source=api",
+		"rulings_uri": "https://api.scryfall.com/cards/79db740b-96f1-4d74-a19d-0cb6853464e6/rulings",
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released\u0026q=oracleid%3A759406d7-44ae-4260-9ef5-3bb2c92f751a\u0026unique=prints",
+		"collector_number": "238bp",
+		"digital": false,
+		"rarity": "mythic",
+		"card_back_id": "0aeebaf5-8c7d-4636-9e82-8c27447861f7",
+		"artist": "Ryan Pancoast",
+		"artist_ids": [
+			"89cc9475-dda2-4d13-bf88-54b92867a25c"
+		],
+		"illustration_id": "8f1298bb-5385-4d55-af66-81ad553e67f9",
+		"border_color": "black",
+		"frame": "2015",
+		"full_art": false,
+		"textless": false,
+		"booster": false,
+		"story_spotlight": false,
+		"promo_types": [
+			"promopack",
+			"stamped"
+		],
+		"edhrec_rank": 22679,
+		"prices": {
+			"usd": null,
+			"usd_foil": null,
+			"usd_etched": null,
+			"eur": null,
+			"eur_foil": null,
+			"tix": null
+		},
+		"related_uris": {
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Planeswalker\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Planeswalker\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"edhrec": "https://edhrec.com/route/?cc=Urza%2C+Planeswalker"
+		}
+	},
+	{
+		"object": "card",
+		"id": "7e44b30f-aed6-47af-8b6c-0669c644e46f",
+		"oracle_id": "759406d7-44ae-4260-9ef5-3bb2c92f751a",
+		"multiverse_ids": [],
+		"name": "Urza, Planeswalker",
+		"lang": "en",
+		"released_at": "2022-11-18",
+		"uri": "https://api.scryfall.com/cards/7e44b30f-aed6-47af-8b6c-0669c644e46f",
+		"scryfall_uri": "https://scryfall.com/card/pbro/238bs/urza-planeswalker?utm_source=api",
+		"layout": "meld",
+		"highres_image": true,
+		"image_status": "highres_scan",
+		"image_uris": {
+			"small": "https://cards.scryfall.io/small/front/7/e/7e44b30f-aed6-47af-8b6c-0669c644e46f.jpg?1669725426",
+			"normal": "https://cards.scryfall.io/normal/front/7/e/7e44b30f-aed6-47af-8b6c-0669c644e46f.jpg?1669725426",
+			"large": "https://cards.scryfall.io/large/front/7/e/7e44b30f-aed6-47af-8b6c-0669c644e46f.jpg?1669725426",
+			"png": "https://cards.scryfall.io/png/front/7/e/7e44b30f-aed6-47af-8b6c-0669c644e46f.png?1669725426",
+			"art_crop": "https://cards.scryfall.io/art_crop/front/7/e/7e44b30f-aed6-47af-8b6c-0669c644e46f.jpg?1669725426",
+			"border_crop": "https://cards.scryfall.io/border_crop/front/7/e/7e44b30f-aed6-47af-8b6c-0669c644e46f.jpg?1669725426"
+		},
+		"mana_cost": "",
+		"cmc": 8.0,
+		"type_line": "Legendary Planeswalker — Urza",
+		"oracle_text": "You may activate the loyalty abilities of Urza, Planeswalker twice each turn rather than only once.\n+2: Artifact, instant, and sorcery spells you cast this turn cost {2} less to cast. You gain 2 life.\n+1: Draw two cards, then discard a card.\n0: Create two 1/1 colorless Soldier artifact creature tokens.\n−3: Exile target nonland permanent.\n−10: Artifacts and planeswalkers you control gain indestructible until end of turn. Destroy all nonland permanents.",
+		"loyalty": "7",
+		"colors": [
+			"U",
+			"W"
+		],
+		"color_indicator": [
+			"U",
+			"W"
+		],
+		"color_identity": [
+			"U",
+			"W"
+		],
+		"keywords": [],
+		"all_parts": [
+			{
+				"object": "related_card",
+				"id": "83981313-ff55-4030-ac82-d6a3087cf675",
+				"component": "token",
+				"name": "Soldier",
+				"type_line": "Token Artifact Creature — Soldier",
+				"uri": "https://api.scryfall.com/cards/83981313-ff55-4030-ac82-d6a3087cf675"
+			},
+			{
+				"object": "related_card",
+				"id": "7e44b30f-aed6-47af-8b6c-0669c644e46f",
+				"component": "meld_result",
+				"name": "Urza, Planeswalker",
+				"type_line": "Legendary Planeswalker — Urza",
+				"uri": "https://api.scryfall.com/cards/7e44b30f-aed6-47af-8b6c-0669c644e46f"
+			},
+			{
+				"object": "related_card",
+				"id": "bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24",
+				"component": "meld_part",
+				"name": "The Mightstone and Weakstone",
+				"type_line": "Legendary Artifact — Powerstone",
+				"uri": "https://api.scryfall.com/cards/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24"
+			},
+			{
+				"object": "related_card",
+				"id": "600259ab-2bb7-4e09-b957-b07dbd37a521",
+				"component": "meld_part",
+				"name": "Urza, Lord Protector",
+				"type_line": "Legendary Creature — Human Artificer",
+				"uri": "https://api.scryfall.com/cards/600259ab-2bb7-4e09-b957-b07dbd37a521"
+			}
+		],
+		"legalities": {
+			"standard": "legal",
+			"future": "legal",
+			"historic": "legal",
+			"gladiator": "legal",
+			"pioneer": "legal",
+			"explorer": "legal",
+			"modern": "legal",
+			"legacy": "legal",
+			"pauper": "not_legal",
+			"vintage": "legal",
+			"penny": "not_legal",
+			"commander": "legal",
+			"brawl": "legal",
+			"historicbrawl": "legal",
+			"alchemy": "legal",
+			"paupercommander": "not_legal",
+			"duel": "legal",
+			"oldschool": "not_legal",
+			"premodern": "not_legal"
+		},
+		"games": [
+			"paper"
+		],
+		"reserved": false,
+		"foil": true,
+		"nonfoil": false,
+		"finishes": [
+			"foil"
+		],
+		"oversized": false,
+		"promo": true,
+		"reprint": true,
+		"variation": false,
+		"set_id": "7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set": "pbro",
+		"set_name": "The Brothers' War Promos",
+		"set_type": "promo",
+		"set_uri": "https://api.scryfall.com/sets/7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set\u0026q=e%3Apbro\u0026unique=prints",
+		"scryfall_set_uri": "https://scryfall.com/sets/pbro?utm_source=api",
+		"rulings_uri": "https://api.scryfall.com/cards/7e44b30f-aed6-47af-8b6c-0669c644e46f/rulings",
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released\u0026q=oracleid%3A759406d7-44ae-4260-9ef5-3bb2c92f751a\u0026unique=prints",
+		"collector_number": "238bs",
+		"digital": false,
+		"rarity": "mythic",
+		"card_back_id": "0aeebaf5-8c7d-4636-9e82-8c27447861f7",
+		"artist": "Ryan Pancoast",
+		"artist_ids": [
+			"89cc9475-dda2-4d13-bf88-54b92867a25c"
+		],
+		"illustration_id": "8f1298bb-5385-4d55-af66-81ad553e67f9",
+		"border_color": "black",
+		"frame": "2015",
+		"full_art": false,
+		"textless": false,
+		"booster": false,
+		"story_spotlight": false,
+		"promo_types": [
+			"prerelease",
+			"datestamped"
+		],
+		"edhrec_rank": 22679,
+		"prices": {
+			"usd": null,
+			"usd_foil": null,
+			"usd_etched": null,
+			"eur": null,
+			"eur_foil": null,
+			"tix": null
+		},
+		"related_uris": {
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Planeswalker\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Planeswalker\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"edhrec": "https://edhrec.com/route/?cc=Urza%2C+Planeswalker"
+		}
+	},
+	{
+		"object": "card",
+		"id": "8aefe8bd-216a-4ec1-9362-3f9dbf7fd083",
+		"oracle_id": "df2af646-3e5b-43a3-8f3e-50565889f456",
+		"multiverse_ids": [
+			588288
+		],
+		"mtgo_id": 105072,
+		"arena_id": 82710,
+		"tcgplayer_id": 448412,
+		"cardmarket_id": 678194,
+		"name": "Urza, Lord Protector",
+		"lang": "en",
+		"released_at": "2022-11-18",
+		"uri": "https://api.scryfall.com/cards/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083",
+		"scryfall_uri": "https://scryfall.com/card/bro/225/urza-lord-protector?utm_source=api",
+		"layout": "meld",
+		"highres_image": false,
+		"image_status": "lowres",
+		"image_uris": {
+			"small": "https://cards.scryfall.io/small/front/8/a/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083.jpg?1670539417",
+			"normal": "https://cards.scryfall.io/normal/front/8/a/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083.jpg?1670539417",
+			"large": "https://cards.scryfall.io/large/front/8/a/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083.jpg?1670539417",
+			"png": "https://cards.scryfall.io/png/front/8/a/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083.png?1670539417",
+			"art_crop": "https://cards.scryfall.io/art_crop/front/8/a/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083.jpg?1670539417",
+			"border_crop": "https://cards.scryfall.io/border_crop/front/8/a/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083.jpg?1670539417"
+		},
+		"mana_cost": "{1}{W}{U}",
+		"cmc": 3.0,
+		"type_line": "Legendary Creature — Human Artificer",
+		"oracle_text": "Artifact, instant, and sorcery spells you cast cost {1} less to cast.\n{7}: If you both own and control Urza, Lord Protector and an artifact named The Mightstone and Weakstone, exile them, then meld them into Urza, Planeswalker. Activate only as a sorcery.",
+		"power": "2",
+		"toughness": "4",
+		"colors": [
+			"U",
+			"W"
+		],
+		"color_identity": [
+			"U",
+			"W"
+		],
+		"keywords": [
+			"Meld"
+		],
+		"all_parts": [
+			{
+				"object": "related_card",
+				"id": "40a01679-3224-427e-bd1d-b797b0ab68b7",
+				"component": "meld_result",
+				"name": "Urza, Planeswalker",
+				"type_line": "Legendary Planeswalker — Urza",
+				"uri": "https://api.scryfall.com/cards/40a01679-3224-427e-bd1d-b797b0ab68b7"
+			},
+			{
+				"object": "related_card",
+				"id": "02aea379-b444-46a3-82f4-3038f698d4f4",
+				"component": "meld_part",
+				"name": "The Mightstone and Weakstone",
+				"type_line": "Legendary Artifact — Powerstone",
+				"uri": "https://api.scryfall.com/cards/02aea379-b444-46a3-82f4-3038f698d4f4"
+			},
+			{
+				"object": "related_card",
+				"id": "8aefe8bd-216a-4ec1-9362-3f9dbf7fd083",
+				"component": "meld_part",
+				"name": "Urza, Lord Protector",
+				"type_line": "Legendary Creature — Human Artificer",
+				"uri": "https://api.scryfall.com/cards/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083"
+			}
+		],
+		"legalities": {
+			"standard": "legal",
+			"future": "legal",
+			"historic": "legal",
+			"gladiator": "legal",
+			"pioneer": "legal",
+			"explorer": "legal",
+			"modern": "legal",
+			"legacy": "legal",
+			"pauper": "not_legal",
+			"vintage": "legal",
+			"penny": "not_legal",
+			"commander": "legal",
+			"brawl": "legal",
+			"historicbrawl": "legal",
+			"alchemy": "legal",
+			"paupercommander": "not_legal",
+			"duel": "legal",
+			"oldschool": "not_legal",
+			"premodern": "not_legal"
+		},
+		"games": [
+			"paper",
+			"mtgo",
+			"arena"
+		],
+		"reserved": false,
+		"foil": true,
+		"nonfoil": true,
+		"finishes": [
+			"nonfoil",
+			"foil"
+		],
+		"oversized": false,
+		"promo": false,
+		"reprint": false,
+		"variation": false,
+		"set_id": "4219a14e-6701-4ddd-a185-21dc054ab19b",
+		"set": "bro",
+		"set_name": "The Brothers' War",
+		"set_type": "expansion",
+		"set_uri": "https://api.scryfall.com/sets/4219a14e-6701-4ddd-a185-21dc054ab19b",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set\u0026q=e%3Abro\u0026unique=prints",
+		"scryfall_set_uri": "https://scryfall.com/sets/bro?utm_source=api",
+		"rulings_uri": "https://api.scryfall.com/cards/8aefe8bd-216a-4ec1-9362-3f9dbf7fd083/rulings",
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released\u0026q=oracleid%3Adf2af646-3e5b-43a3-8f3e-50565889f456\u0026unique=prints",
+		"collector_number": "225",
+		"digital": false,
+		"rarity": "mythic",
+		"card_back_id": "58a4215b-9f3d-40d4-bc05-d8d3cc2354d9",
+		"artist": "Ryan Pancoast",
+		"artist_ids": [
+			"89cc9475-dda2-4d13-bf88-54b92867a25c"
+		],
+		"illustration_id": "c1abe983-d141-4884-9812-2593773f1a59",
+		"border_color": "black",
+		"frame": "2015",
+		"frame_effects": [
+			"legendary"
+		],
+		"security_stamp": "oval",
+		"full_art": false,
+		"textless": false,
+		"booster": true,
+		"story_spotlight": false,
+		"edhrec_rank": 7316,
+		"prices": {
+			"usd": "26.65",
+			"usd_foil": "31.39",
+			"usd_etched": null,
+			"eur": "19.24",
+			"eur_foil": "29.19",
+			"tix": "5.82"
+		},
+		"related_uris": {
+			"gatherer": "https://gatherer.wizards.com/Pages/Card/Details.aspx?multiverseid=588288",
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Lord+Protector\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Lord+Protector\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"edhrec": "https://edhrec.com/route/?cc=Urza%2C+Lord+Protector"
+		}
+	},
+	{
+		"object": "card",
+		"id": "9704f0ae-febd-4c9e-81fd-d94d779219c7",
+		"oracle_id": "df2af646-3e5b-43a3-8f3e-50565889f456",
+		"multiverse_ids": [],
+		"name": "Urza, Lord Protector",
+		"lang": "en",
+		"released_at": "2022-11-18",
+		"uri": "https://api.scryfall.com/cards/9704f0ae-febd-4c9e-81fd-d94d779219c7",
+		"scryfall_uri": "https://scryfall.com/card/pbro/225p/urza-lord-protector?utm_source=api",
+		"layout": "meld",
+		"highres_image": true,
+		"image_status": "highres_scan",
+		"image_uris": {
+			"small": "https://cards.scryfall.io/small/front/9/7/9704f0ae-febd-4c9e-81fd-d94d779219c7.jpg?1669725455",
+			"normal": "https://cards.scryfall.io/normal/front/9/7/9704f0ae-febd-4c9e-81fd-d94d779219c7.jpg?1669725455",
+			"large": "https://cards.scryfall.io/large/front/9/7/9704f0ae-febd-4c9e-81fd-d94d779219c7.jpg?1669725455",
+			"png": "https://cards.scryfall.io/png/front/9/7/9704f0ae-febd-4c9e-81fd-d94d779219c7.png?1669725455",
+			"art_crop": "https://cards.scryfall.io/art_crop/front/9/7/9704f0ae-febd-4c9e-81fd-d94d779219c7.jpg?1669725455",
+			"border_crop": "https://cards.scryfall.io/border_crop/front/9/7/9704f0ae-febd-4c9e-81fd-d94d779219c7.jpg?1669725455"
+		},
+		"mana_cost": "{1}{W}{U}",
+		"cmc": 3.0,
+		"type_line": "Legendary Creature — Human Artificer",
+		"oracle_text": "Artifact, instant, and sorcery spells you cast cost {1} less to cast.\n{7}: If you both own and control Urza, Lord Protector and an artifact named The Mightstone and Weakstone, exile them, then meld them into Urza, Planeswalker. Activate only as a sorcery.",
+		"power": "2",
+		"toughness": "4",
+		"colors": [
+			"U",
+			"W"
+		],
+		"color_identity": [
+			"U",
+			"W"
+		],
+		"keywords": [
+			"Meld"
+		],
+		"all_parts": [
+			{
+				"object": "related_card",
+				"id": "7e44b30f-aed6-47af-8b6c-0669c644e46f",
+				"component": "meld_result",
+				"name": "Urza, Planeswalker",
+				"type_line": "Legendary Planeswalker — Urza",
+				"uri": "https://api.scryfall.com/cards/7e44b30f-aed6-47af-8b6c-0669c644e46f"
+			},
+			{
+				"object": "related_card",
+				"id": "bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24",
+				"component": "meld_part",
+				"name": "The Mightstone and Weakstone",
+				"type_line": "Legendary Artifact — Powerstone",
+				"uri": "https://api.scryfall.com/cards/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24"
+			},
+			{
+				"object": "related_card",
+				"id": "600259ab-2bb7-4e09-b957-b07dbd37a521",
+				"component": "meld_part",
+				"name": "Urza, Lord Protector",
+				"type_line": "Legendary Creature — Human Artificer",
+				"uri": "https://api.scryfall.com/cards/600259ab-2bb7-4e09-b957-b07dbd37a521"
+			}
+		],
+		"legalities": {
+			"standard": "legal",
+			"future": "legal",
+			"historic": "legal",
+			"gladiator": "legal",
+			"pioneer": "legal",
+			"explorer": "legal",
+			"modern": "legal",
+			"legacy": "legal",
+			"pauper": "not_legal",
+			"vintage": "legal",
+			"penny": "not_legal",
+			"commander": "legal",
+			"brawl": "legal",
+			"historicbrawl": "legal",
+			"alchemy": "legal",
+			"paupercommander": "not_legal",
+			"duel": "legal",
+			"oldschool": "not_legal",
+			"premodern": "not_legal"
+		},
+		"games": [
+			"paper"
+		],
+		"reserved": false,
+		"foil": true,
+		"nonfoil": true,
+		"finishes": [
+			"nonfoil",
+			"foil"
+		],
+		"oversized": false,
+		"promo": true,
+		"reprint": true,
+		"variation": false,
+		"set_id": "7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set": "pbro",
+		"set_name": "The Brothers' War Promos",
+		"set_type": "promo",
+		"set_uri": "https://api.scryfall.com/sets/7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set\u0026q=e%3Apbro\u0026unique=prints",
+		"scryfall_set_uri": "https://scryfall.com/sets/pbro?utm_source=api",
+		"rulings_uri": "https://api.scryfall.com/cards/9704f0ae-febd-4c9e-81fd-d94d779219c7/rulings",
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released\u0026q=oracleid%3Adf2af646-3e5b-43a3-8f3e-50565889f456\u0026unique=prints",
+		"collector_number": "225p",
+		"digital": false,
+		"rarity": "mythic",
+		"card_back_id": "58a4215b-9f3d-40d4-bc05-d8d3cc2354d9",
+		"artist": "Ryan Pancoast",
+		"artist_ids": [
+			"89cc9475-dda2-4d13-bf88-54b92867a25c"
+		],
+		"illustration_id": "c1abe983-d141-4884-9812-2593773f1a59",
+		"border_color": "black",
+		"frame": "2015",
+		"frame_effects": [
+			"legendary"
+		],
+		"security_stamp": "oval",
+		"full_art": false,
+		"textless": false,
+		"booster": false,
+		"story_spotlight": false,
+		"promo_types": [
+			"promopack",
+			"stamped"
+		],
+		"edhrec_rank": 7316,
+		"prices": {
+			"usd": null,
+			"usd_foil": null,
+			"usd_etched": null,
+			"eur": null,
+			"eur_foil": null,
+			"tix": null
+		},
+		"related_uris": {
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Lord+Protector\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck\u0026game=magic\u0026partner=scryfall\u0026q=Urza%2C+Lord+Protector\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"edhrec": "https://edhrec.com/route/?cc=Urza%2C+Lord+Protector"
+		}
+	},
+	{
+		"object": "card",
+		"id": "9cba18b5-9042-431f-a013-46761529fb95",
+		"oracle_id": "c396db03-bf11-4e20-b630-4f9aa8fd78da",
+		"multiverse_ids": [],
+		"name": "The Mightstone and Weakstone",
+		"lang": "en",
+		"released_at": "2022-11-18",
+		"uri": "https://api.scryfall.com/cards/9cba18b5-9042-431f-a013-46761529fb95",
+		"scryfall_uri": "https://scryfall.com/card/pbro/238ap/the-mightstone-and-weakstone?utm_source=api",
+		"layout": "meld",
+		"highres_image": true,
+		"image_status": "highres_scan",
+		"image_uris": {
+			"small": "https://cards.scryfall.io/small/front/9/c/9cba18b5-9042-431f-a013-46761529fb95.jpg?1669725386",
+			"normal": "https://cards.scryfall.io/normal/front/9/c/9cba18b5-9042-431f-a013-46761529fb95.jpg?1669725386",
+			"large": "https://cards.scryfall.io/large/front/9/c/9cba18b5-9042-431f-a013-46761529fb95.jpg?1669725386",
+			"png": "https://cards.scryfall.io/png/front/9/c/9cba18b5-9042-431f-a013-46761529fb95.png?1669725386",
+			"art_crop": "https://cards.scryfall.io/art_crop/front/9/c/9cba18b5-9042-431f-a013-46761529fb95.jpg?1669725386",
+			"border_crop": "https://cards.scryfall.io/border_crop/front/9/c/9cba18b5-9042-431f-a013-46761529fb95.jpg?1669725386"
+		},
+		"mana_cost": "{5}",
+		"cmc": 5.0,
+		"type_line": "Legendary Artifact — Powerstone",
+		"oracle_text": "When The Mightstone and Weakstone enters the battlefield, choose one —\n• Draw two cards.\n• Target creature gets -5/-5 until end of turn.\n{T}: Add {C}{C}. This mana can't be spent to cast nonartifact spells.\n(Melds with Urza, Lord Protector.)",
+		"colors": [],
+		"color_identity": [],
+		"keywords": [],
+		"produced_mana": [
+			"C"
+		],
+		"all_parts": [
+			{
+				"object": "related_card",
+				"id": "7e44b30f-aed6-47af-8b6c-0669c644e46f",
+				"component": "meld_result",
+				"name": "Urza, Planeswalker",
+				"type_line": "Legendary Planeswalker — Urza",
+				"uri": "https://api.scryfall.com/cards/7e44b30f-aed6-47af-8b6c-0669c644e46f"
+			},
+			{
+				"object": "related_card",
+				"id": "bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24",
+				"component": "meld_part",
+				"name": "The Mightstone and Weakstone",
+				"type_line": "Legendary Artifact — Powerstone",
+				"uri": "https://api.scryfall.com/cards/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24"
+			},
+			{
+				"object": "related_card",
+				"id": "600259ab-2bb7-4e09-b957-b07dbd37a521",
+				"component": "meld_part",
+				"name": "Urza, Lord Protector",
+				"type_line": "Legendary Creature — Human Artificer",
+				"uri": "https://api.scryfall.com/cards/600259ab-2bb7-4e09-b957-b07dbd37a521"
+			}
+		],
+		"legalities": {
+			"standard": "legal",
+			"future": "legal",
+			"historic": "legal",
+			"gladiator": "legal",
+			"pioneer": "legal",
+			"explorer": "legal",
+			"modern": "legal",
+			"legacy": "legal",
+			"pauper": "not_legal",
+			"vintage": "legal",
+			"penny": "not_legal",
+			"commander": "legal",
+			"brawl": "legal",
+			"historicbrawl": "legal",
+			"alchemy": "legal",
+			"paupercommander": "not_legal",
+			"duel": "legal",
+			"oldschool": "not_legal",
+			"premodern": "not_legal"
+		},
+		"games": [
+			"paper"
+		],
+		"reserved": false,
+		"foil": true,
+		"nonfoil": true,
+		"finishes": [
+			"nonfoil",
+			"foil"
+		],
+		"oversized": false,
+		"promo": true,
+		"reprint": true,
+		"variation": false,
+		"set_id": "7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set": "pbro",
+		"set_name": "The Brothers' War Promos",
+		"set_type": "promo",
+		"set_uri": "https://api.scryfall.com/sets/7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set\u0026q=e%3Apbro\u0026unique=prints",
+		"scryfall_set_uri": "https://scryfall.com/sets/pbro?utm_source=api",
+		"rulings_uri": "https://api.scryfall.com/cards/9cba18b5-9042-431f-a013-46761529fb95/rulings",
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released\u0026q=oracleid%3Ac396db03-bf11-4e20-b630-4f9aa8fd78da\u0026unique=prints",
+		"collector_number": "238ap",
+		"digital": false,
+		"rarity": "rare",
+		"card_back_id": "906fcd6b-718e-49a6-8d60-0dbaa07a05d6",
+		"artist": "Ryan Pancoast",
+		"artist_ids": [
+			"89cc9475-dda2-4d13-bf88-54b92867a25c"
+		],
+		"illustration_id": "f8e05098-615d-4720-b674-d3323fd23118",
+		"border_color": "black",
+		"frame": "2015",
+		"frame_effects": [
+			"legendary"
+		],
+		"security_stamp": "oval",
+		"full_art": false,
+		"textless": false,
+		"booster": false,
+		"story_spotlight": false,
+		"promo_types": [
+			"promopack",
+			"stamped"
+		],
+		"edhrec_rank": 6509,
+		"prices": {
+			"usd": null,
+			"usd_foil": null,
+			"usd_etched": null,
+			"eur": null,
+			"eur_foil": null,
+			"tix": null
+		},
+		"related_uris": {
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article\u0026game=magic\u0026partner=scryfall\u0026q=The+Mightstone+and+Weakstone\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck\u0026game=magic\u0026partner=scryfall\u0026q=The+Mightstone+and+Weakstone\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"edhrec": "https://edhrec.com/route/?cc=The+Mightstone+and+Weakstone"
+		}
+	},
+	{
+		"object": "card",
+		"id": "bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24",
+		"oracle_id": "c396db03-bf11-4e20-b630-4f9aa8fd78da",
+		"multiverse_ids": [],
+		"tcgplayer_id": 454098,
+		"name": "The Mightstone and Weakstone",
+		"lang": "en",
+		"released_at": "2022-11-18",
+		"uri": "https://api.scryfall.com/cards/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24",
+		"scryfall_uri": "https://scryfall.com/card/pbro/238as/the-mightstone-and-weakstone?utm_source=api",
+		"layout": "meld",
+		"highres_image": true,
+		"image_status": "highres_scan",
+		"image_uris": {
+			"small": "https://cards.scryfall.io/small/front/b/c/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24.jpg?1669725438",
+			"normal": "https://cards.scryfall.io/normal/front/b/c/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24.jpg?1669725438",
+			"large": "https://cards.scryfall.io/large/front/b/c/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24.jpg?1669725438",
+			"png": "https://cards.scryfall.io/png/front/b/c/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24.png?1669725438",
+			"art_crop": "https://cards.scryfall.io/art_crop/front/b/c/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24.jpg?1669725438",
+			"border_crop": "https://cards.scryfall.io/border_crop/front/b/c/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24.jpg?1669725438"
+		},
+		"mana_cost": "{5}",
+		"cmc": 5.0,
+		"type_line": "Legendary Artifact — Powerstone",
+		"oracle_text": "When The Mightstone and Weakstone enters the battlefield, choose one —\n• Draw two cards.\n• Target creature gets -5/-5 until end of turn.\n{T}: Add {C}{C}. This mana can't be spent to cast nonartifact spells.\n(Melds with Urza, Lord Protector.)",
+		"colors": [],
+		"color_identity": [],
+		"keywords": [],
+		"produced_mana": [
+			"C"
+		],
+		"all_parts": [
+			{
+				"object": "related_card",
+				"id": "7e44b30f-aed6-47af-8b6c-0669c644e46f",
+				"component": "meld_result",
+				"name": "Urza, Planeswalker",
+				"type_line": "Legendary Planeswalker — Urza",
+				"uri": "https://api.scryfall.com/cards/7e44b30f-aed6-47af-8b6c-0669c644e46f"
+			},
+			{
+				"object": "related_card",
+				"id": "bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24",
+				"component": "meld_part",
+				"name": "The Mightstone and Weakstone",
+				"type_line": "Legendary Artifact — Powerstone",
+				"uri": "https://api.scryfall.com/cards/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24"
+			},
+			{
+				"object": "related_card",
+				"id": "600259ab-2bb7-4e09-b957-b07dbd37a521",
+				"component": "meld_part",
+				"name": "Urza, Lord Protector",
+				"type_line": "Legendary Creature — Human Artificer",
+				"uri": "https://api.scryfall.com/cards/600259ab-2bb7-4e09-b957-b07dbd37a521"
+			}
+		],
+		"legalities": {
+			"standard": "legal",
+			"future": "legal",
+			"historic": "legal",
+			"gladiator": "legal",
+			"pioneer": "legal",
+			"explorer": "legal",
+			"modern": "legal",
+			"legacy": "legal",
+			"pauper": "not_legal",
+			"vintage": "legal",
+			"penny": "not_legal",
+			"commander": "legal",
+			"brawl": "legal",
+			"historicbrawl": "legal",
+			"alchemy": "legal",
+			"paupercommander": "not_legal",
+			"duel": "legal",
+			"oldschool": "not_legal",
+			"premodern": "not_legal"
+		},
+		"games": [
+			"paper"
+		],
+		"reserved": false,
+		"foil": true,
+		"nonfoil": false,
+		"finishes": [
+			"foil"
+		],
+		"oversized": false,
+		"promo": true,
+		"reprint": true,
+		"variation": false,
+		"set_id": "7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set": "pbro",
+		"set_name": "The Brothers' War Promos",
+		"set_type": "promo",
+		"set_uri": "https://api.scryfall.com/sets/7e8b0464-6ce5-4184-abc7-3de544eebc6a",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set\u0026q=e%3Apbro\u0026unique=prints",
+		"scryfall_set_uri": "https://scryfall.com/sets/pbro?utm_source=api",
+		"rulings_uri": "https://api.scryfall.com/cards/bc8cfad0-78e8-4a8b-b8cb-cd4a5eeade24/rulings",
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released\u0026q=oracleid%3Ac396db03-bf11-4e20-b630-4f9aa8fd78da\u0026unique=prints",
+		"collector_number": "238as",
+		"digital": false,
+		"rarity": "rare",
+		"card_back_id": "906fcd6b-718e-49a6-8d60-0dbaa07a05d6",
+		"artist": "Ryan Pancoast",
+		"artist_ids": [
+			"89cc9475-dda2-4d13-bf88-54b92867a25c"
+		],
+		"illustration_id": "f8e05098-615d-4720-b674-d3323fd23118",
+		"border_color": "black",
+		"frame": "2015",
+		"frame_effects": [
+			"legendary"
+		],
+		"security_stamp": "oval",
+		"full_art": false,
+		"textless": false,
+		"booster": false,
+		"story_spotlight": false,
+		"promo_types": [
+			"prerelease",
+			"datestamped"
+		],
+		"edhrec_rank": 6509,
+		"prices": {
+			"usd": null,
+			"usd_foil": "15.23",
+			"usd_etched": null,
+			"eur": null,
+			"eur_foil": null,
+			"tix": null
+		},
+		"related_uris": {
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article\u0026game=magic\u0026partner=scryfall\u0026q=The+Mightstone+and+Weakstone\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck\u0026game=magic\u0026partner=scryfall\u0026q=The+Mightstone+and+Weakstone\u0026utm_campaign=affiliate\u0026utm_medium=api\u0026utm_source=scryfall",
+			"edhrec": "https://edhrec.com/route/?cc=The+Mightstone+and+Weakstone"
+		}
+	}
+]
