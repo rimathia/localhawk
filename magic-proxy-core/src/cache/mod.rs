@@ -1,8 +1,6 @@
 use printpdf::image_crate::DynamicImage;
 use std::collections::HashMap;
 use time::{Duration, OffsetDateTime};
-use crate::error::ProxyError;
-use crate::scryfall::ScryfallClient;
 
 #[derive(Debug)]
 struct CacheEntry {
@@ -31,31 +29,6 @@ impl ImageCache {
         }
     }
 
-    pub async fn get_or_fetch(
-        &mut self,
-        url: &str,
-        client: &ScryfallClient,
-    ) -> Result<DynamicImage, ProxyError> {
-        // Check if we have a valid cached entry
-        if let Some(entry) = self.cache.get(url) {
-            let age = OffsetDateTime::now_utc() - entry.created_at;
-            if age < self.max_age {
-                return Ok(entry.image.clone());
-            }
-        }
-
-        // Fetch new image
-        let image = client.get_image(url).await?;
-        
-        // Store in cache
-        self.cache.insert(url.to_string(), CacheEntry {
-            image: image.clone(),
-            created_at: OffsetDateTime::now_utc(),
-        });
-
-        Ok(image)
-    }
-
     pub fn get(&self, url: &str) -> Option<&DynamicImage> {
         self.cache.get(url).and_then(|entry| {
             let age = OffsetDateTime::now_utc() - entry.created_at;
@@ -68,10 +41,13 @@ impl ImageCache {
     }
 
     pub fn insert(&mut self, url: String, image: DynamicImage) {
-        self.cache.insert(url, CacheEntry {
-            image,
-            created_at: OffsetDateTime::now_utc(),
-        });
+        self.cache.insert(
+            url,
+            CacheEntry {
+                image,
+                created_at: OffsetDateTime::now_utc(),
+            },
+        );
     }
 
     pub fn clear(&mut self) {
@@ -126,7 +102,7 @@ mod tests {
         cache.insert(test_url.to_string(), test_image.clone());
         assert_eq!(cache.size(), 1);
         assert!(cache.contains(test_url));
-        
+
         let retrieved = cache.get(test_url);
         assert!(retrieved.is_some());
     }
@@ -152,7 +128,7 @@ mod tests {
         let mut cache = ImageCache::new();
         cache.insert("url1".to_string(), create_test_image());
         cache.insert("url2".to_string(), create_test_image());
-        
+
         assert_eq!(cache.size(), 2);
         cache.clear();
         assert_eq!(cache.size(), 0);
@@ -162,7 +138,7 @@ mod tests {
     fn test_cache_purge_expired() {
         let mut cache = ImageCache::new();
         cache.insert("url1".to_string(), create_test_image());
-        
+
         assert_eq!(cache.size(), 1);
         cache.purge_expired(); // Should not remove anything since max_age is 14 days
         assert_eq!(cache.size(), 1);
