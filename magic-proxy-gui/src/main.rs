@@ -1,9 +1,8 @@
-use iced::{Application, Settings};
-
 mod app;
 
 fn main() -> iced::Result {
     env_logger::init();
     
-    app::MagicProxyApp::run(Settings::default())
+    iced::application("Magic Card Proxy Generator", app::update, app::view)
+        .run_with(app::initialize)
 }
