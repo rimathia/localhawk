@@ -6,7 +6,7 @@ pub mod decklist;
 pub mod lookup;
 
 pub use error::ProxyError;
-pub use scryfall::{ScryfallClient, Card, CardSearchResult, ScryfallCardNames};
+pub use scryfall::{ScryfallClient, Card, CardSearchResult, ScryfallCardNames, models::get_minimal_scryfall_languages, client::ApiCall};
 pub use pdf::{PdfOptions, PageSize, generate_pdf};
 pub use cache::ImageCache;
 pub use decklist::{DecklistEntry, ParsedDecklistLine, parse_line, parse_decklist};
