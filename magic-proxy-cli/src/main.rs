@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use magic_proxy_core::{ProxyGenerator, PdfOptions};
+use magic_proxy_core::{PdfOptions, ProxyGenerator, get_image_cache};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -28,7 +28,7 @@ enum Commands {
         /// Number of cards per row (default: 3)
         #[arg(long, default_value = "3")]
         cards_per_row: u32,
-        /// Number of cards per column (default: 3) 
+        /// Number of cards per column (default: 3)
         #[arg(long, default_value = "3")]
         cards_per_column: u32,
     },
@@ -37,19 +37,25 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-    
+
     let cli = Cli::parse();
     let mut generator = ProxyGenerator::new()?;
 
     match cli.command {
         Commands::Search { name } => {
             println!("Searching for '{}'...", name);
-            
-            match generator.search_card(&name).await {
+
+            match ProxyGenerator::search_card(&name).await {
                 Ok(results) => {
                     println!("Found {} cards:", results.total_found);
                     for (i, card) in results.cards.iter().enumerate().take(10) {
-                        println!("  {}. {} ({}) - {}", i + 1, card.name, card.set, card.language);
+                        println!(
+                            "  {}. {} ({}) - {}",
+                            i + 1,
+                            card.name,
+                            card.set,
+                            card.language
+                        );
                     }
                     if results.cards.len() > 10 {
                         println!("  ... and {} more", results.cards.len() - 10);
@@ -61,18 +67,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
         }
-        Commands::Generate { cards, output, cards_per_row, cards_per_column } => {
+        Commands::Generate {
+            cards,
+            output,
+            cards_per_row,
+            cards_per_column,
+        } => {
             if cards.is_empty() {
                 eprintln!("No cards specified. Use --cards to specify card names.");
                 std::process::exit(1);
             }
 
             println!("Generating PDF with {} cards...", cards.len());
-            
+
             // Search and add each card
             for card_name in cards {
                 println!("Searching for '{}'...", card_name);
-                match generator.search_card(&card_name).await {
+                match ProxyGenerator::search_card(&card_name).await {
                     Ok(results) => {
                         if let Some(card) = results.cards.first() {
                             generator.add_card(card.clone(), 1);
@@ -100,13 +111,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             };
 
             println!("Generating PDF...");
-            match generator.generate_pdf(options, |current, total| {
-                println!("Progress: {}/{}", current, total);
-            }).await {
+            match generator
+                .generate_pdf(options, |current, total| {
+                    println!("Progress: {}/{}", current, total);
+                })
+                .await
+            {
                 Ok(pdf_data) => {
                     std::fs::write(&output, pdf_data)?;
                     println!("PDF saved to: {}", output.display());
-                    println!("Cache size: {} images", generator.cache_size());
+                    println!(
+                        "Cache size: {} images",
+                        get_image_cache().read().unwrap().size()
+                    );
                 }
                 Err(e) => {
                     eprintln!("PDF generation failed: {}", e);
