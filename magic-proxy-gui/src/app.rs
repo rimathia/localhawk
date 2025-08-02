@@ -1,6 +1,6 @@
 use iced::widget::{button, column, container, row, scrollable, text, text_editor};
 use iced::{Element, Length, Task};
-use magic_proxy_core::{DecklistEntry, parse_decklist, get_minimal_scryfall_languages, ProxyGenerator, ScryfallClient, ApiCall, ApiCallType, PdfOptions};
+use magic_proxy_core::{DecklistEntry, parse_decklist, get_minimal_scryfall_languages, ProxyGenerator, ScryfallClient, ApiCall, ApiCallType, PdfOptions, force_update_card_lookup, get_card_name_cache_info};
 use rfd::AsyncFileDialog;
 
 #[derive(Debug, Clone)]
@@ -102,29 +102,11 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
 
             return Task::perform(
                 async move {
-                    // Use network-enabled parsing with fuzzy matching
-                    match ProxyGenerator::new() {
-                        Ok(mut generator) => {
-                            match generator.parse_and_resolve_decklist(&decklist_text).await {
-                                Ok(cards) => cards,
-                                Err(e) => {
-                                    log::error!("Failed to parse decklist with fuzzy matching: {}", e);
-                                    // Fall back to offline parsing
-                                    let languages = get_minimal_scryfall_languages();
-                                    let parsed_lines = parse_decklist(&decklist_text, &languages);
-                                    
-                                    let mut resolved_entries = Vec::new();
-                                    for line in parsed_lines {
-                                        if let Some(entry) = line.as_entry() {
-                                            resolved_entries.push(entry);
-                                        }
-                                    }
-                                    resolved_entries
-                                }
-                            }
-                        }
+                    // Use the new static method - no expensive ProxyGenerator initialization!
+                    match ProxyGenerator::parse_and_resolve_decklist(&decklist_text).await {
+                        Ok(cards) => cards,
                         Err(e) => {
-                            log::error!("Failed to create ProxyGenerator: {}", e);
+                            log::error!("Failed to parse decklist with fuzzy matching: {}", e);
                             // Fall back to offline parsing
                             let languages = get_minimal_scryfall_languages();
                             let parsed_lines = parse_decklist(&decklist_text, &languages);
@@ -185,39 +167,36 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             let cards = state.parsed_cards.clone();
             return Task::perform(
                 async move {
-                    match ProxyGenerator::new() {
-                        Ok(mut generator) => {
-                            // Search for each card and add to generator
-                            for entry in cards {
-                                match generator.search_card(&entry.name).await {
-                                    Ok(search_result) => {
-                                        if let Some(card) = search_result.cards.into_iter().find(|c| {
-                                            // Try to match set if specified
-                                            if let Some(ref entry_set) = entry.set {
-                                                c.set.to_lowercase() == entry_set.to_lowercase()
-                                            } else {
-                                                true // Take first result if no set specified
-                                            }
-                                        }) {
-                                            generator.add_card(card, entry.multiple as u32);
-                                        }
+                    // Build card list for PDF generation
+                    let mut card_list = Vec::new();
+                    
+                    for entry in cards {
+                        match ProxyGenerator::search_card(&entry.name).await {
+                            Ok(search_result) => {
+                                if let Some(card) = search_result.cards.into_iter().find(|c| {
+                                    // Try to match set if specified
+                                    if let Some(ref entry_set) = entry.set {
+                                        c.set.to_lowercase() == entry_set.to_lowercase()
+                                    } else {
+                                        true // Take first result if no set specified
                                     }
-                                    Err(_) => {
-                                        // Skip cards that can't be found
-                                        continue;
-                                    }
+                                }) {
+                                    card_list.push((card, entry.multiple as u32));
                                 }
                             }
-
-                            // Generate PDF
-                            match generator.generate_pdf(PdfOptions::default(), |_current, _total| {
-                                // No progress reporting for now
-                            }).await {
-                                Ok(pdf_data) => Ok(pdf_data),
-                                Err(e) => Err(format!("PDF generation failed: {}", e)),
+                            Err(_) => {
+                                // Skip cards that can't be found
+                                continue;
                             }
                         }
-                        Err(e) => Err(format!("Failed to create ProxyGenerator: {}", e)),
+                    }
+
+                    // Generate PDF using the new static method
+                    match ProxyGenerator::generate_pdf_from_cards(&card_list, PdfOptions::default(), |_current, _total| {
+                        // No progress reporting for now
+                    }).await {
+                        Ok(pdf_data) => Ok(pdf_data),
+                        Err(e) => Err(format!("PDF generation failed: {}", e)),
                     }
                 },
                 Message::PdfGenerated,
@@ -289,21 +268,16 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
 
             return Task::perform(
                 async {
-                    match ProxyGenerator::new() {
-                        Ok(mut generator) => {
-                            match generator.force_update_card_lookup().await {
-                                Ok(_) => {
-                                    // Get cache info after update
-                                    if let Some((timestamp, count)) = generator.get_card_name_cache_info() {
-                                        Ok(format!("Updated {} card names at {}", count, timestamp.format(&time::format_description::well_known::Rfc3339).unwrap_or_else(|_| "unknown time".to_string())))
-                                    } else {
-                                        Ok("Updated card names successfully".to_string())
-                                    }
-                                },
-                                Err(e) => Err(format!("Failed to update card names: {}", e)),
+                    match force_update_card_lookup().await {
+                        Ok(_) => {
+                            // Get cache info after update
+                            if let Some((timestamp, count)) = get_card_name_cache_info() {
+                                Ok(format!("Updated {} card names at {}", count, timestamp.format(&time::format_description::well_known::Rfc3339).unwrap_or_else(|_| "unknown time".to_string())))
+                            } else {
+                                Ok("Updated card names successfully".to_string())
                             }
-                        }
-                        Err(e) => Err(format!("Failed to create ProxyGenerator: {}", e)),
+                        },
+                        Err(e) => Err(format!("Failed to update card names: {}", e)),
                     }
                 },
                 Message::CardNamesUpdated,

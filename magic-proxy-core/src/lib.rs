@@ -5,6 +5,7 @@ pub mod cache;
 pub mod decklist;
 pub mod lookup;
 pub mod card_name_cache;
+pub mod globals;
 
 pub use error::ProxyError;
 pub use scryfall::{ScryfallClient, Card, CardSearchResult, ScryfallCardNames, models::get_minimal_scryfall_languages, client::{ApiCall, ApiCallType}};
@@ -13,60 +14,48 @@ pub use cache::ImageCache;
 pub use decklist::{DecklistEntry, ParsedDecklistLine, parse_line, parse_decklist};
 pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};
 pub use card_name_cache::CardNameCache;
+pub use globals::{get_scryfall_client, get_image_cache, ensure_card_lookup_initialized, force_update_card_lookup, find_card_name, get_card_name_cache_info, get_or_fetch_image};
 
 /// Main interface for generating Magic card proxy sheets
+#[derive(Debug)]
 pub struct ProxyGenerator {
-    scryfall: ScryfallClient,
-    cache: ImageCache,
-    cards: Vec<(Card, u32)>,
-    card_lookup: Option<CardNameLookup>,
-    card_name_cache: CardNameCache,
+    cards: Vec<(Card, u32)>,  // Only local state for this operation
 }
 
 impl ProxyGenerator {
     /// Create a new ProxyGenerator instance
     pub fn new() -> Result<Self, ProxyError> {
         Ok(ProxyGenerator {
-            scryfall: ScryfallClient::new()?,
-            cache: ImageCache::new(),
             cards: Vec::new(),
-            card_lookup: None,
-            card_name_cache: CardNameCache::new()?,
         })
     }
 
     /// Search for cards by name
-    pub async fn search_card(&self, name: &str) -> Result<CardSearchResult, ProxyError> {
-        self.scryfall.search_card(name).await
+    pub async fn search_card(name: &str) -> Result<CardSearchResult, ProxyError> {
+        get_scryfall_client().search_card(name).await
     }
 
-    /// Get all card names from Scryfall and initialize fuzzy matching
-    pub async fn initialize_card_lookup(&mut self) -> Result<(), ProxyError> {
-        let card_names = self.card_name_cache.get_card_names(&self.scryfall, false).await?;
-        self.card_lookup = Some(CardNameLookup::from_card_names(&card_names.names));
-        Ok(())
+    /// Get all card names from Scryfall and initialize fuzzy matching (now uses global state)
+    pub async fn initialize_card_lookup() -> Result<(), ProxyError> {
+        ensure_card_lookup_initialized().await
     }
 
-    /// Force update card names from Scryfall and reinitialize fuzzy matching
-    pub async fn force_update_card_lookup(&mut self) -> Result<(), ProxyError> {
-        let card_names = self.card_name_cache.get_card_names(&self.scryfall, true).await?;
-        self.card_lookup = Some(CardNameLookup::from_card_names(&card_names.names));
-        Ok(())
+    /// Force update card names from Scryfall and reinitialize fuzzy matching (now uses global state)  
+    pub async fn force_update_card_lookup() -> Result<(), ProxyError> {
+        force_update_card_lookup().await
     }
 
-    /// Find a card name using fuzzy matching (requires initialize_card_lookup to be called first)
-    pub fn find_card_name(&self, name: &str) -> Option<NameLookupResult> {
-        self.card_lookup.as_ref()?.find(name)
+    /// Find a card name using fuzzy matching (now uses global state)
+    pub fn find_card_name(name: &str) -> Option<NameLookupResult> {
+        find_card_name(name)
     }
 
     /// Parse a decklist and resolve card names using fuzzy matching
-    pub async fn parse_and_resolve_decklist(&mut self, decklist_text: &str) -> Result<Vec<DecklistEntry>, ProxyError> {
+    pub async fn parse_and_resolve_decklist(decklist_text: &str) -> Result<Vec<DecklistEntry>, ProxyError> {
         use scryfall::models::get_minimal_scryfall_languages;
         
-        // Ensure card lookup is initialized
-        if self.card_lookup.is_none() {
-            self.initialize_card_lookup().await?;
-        }
+        // Ensure global card lookup is initialized
+        ensure_card_lookup_initialized().await?;
 
         let languages = get_minimal_scryfall_languages();
         let parsed_lines = parse_decklist(decklist_text, &languages);
@@ -74,8 +63,8 @@ impl ProxyGenerator {
         let mut resolved_entries = Vec::new();
         for line in parsed_lines {
             if let Some(mut entry) = line.as_entry() {
-                // Try to resolve the card name using fuzzy matching
-                if let Some(lookup_result) = self.find_card_name(&entry.name) {
+                // Try to resolve the card name using global fuzzy matching
+                if let Some(lookup_result) = find_card_name(&entry.name) {
                     entry.name = lookup_result.name;
                 }
                 resolved_entries.push(entry);
@@ -131,13 +120,13 @@ impl ProxyGenerator {
             for _ in 0..*quantity {
                 progress_callback(current_progress, total_images);
                 
-                // Get front image
-                let front_image = self.cache.get_or_fetch(&card.border_crop, &self.scryfall).await?;
+                // Get front image using global cache
+                let front_image = get_or_fetch_image(&card.border_crop).await?;
                 images.push(front_image);
                 
                 // Get back image if it exists
                 if let Some(back_url) = &card.border_crop_back {
-                    let back_image = self.cache.get_or_fetch(back_url, &self.scryfall).await?;
+                    let back_image = get_or_fetch_image(back_url).await?;
                     images.push(back_image);
                 }
                 
@@ -151,29 +140,80 @@ impl ProxyGenerator {
         generate_pdf(images.into_iter(), options)
     }
 
-    /// Get cache statistics
-    pub fn cache_size(&self) -> usize {
-        self.cache.size()
+    /// Generate PDF from a list of cards (static method using global state)
+    pub async fn generate_pdf_from_cards<F>(
+        cards: &[(Card, u32)],
+        options: PdfOptions,
+        mut progress_callback: F,
+    ) -> Result<Vec<u8>, ProxyError>
+    where
+        F: FnMut(usize, usize) + Send,
+    {
+        if cards.is_empty() {
+            return Err(ProxyError::InvalidCard("No cards to generate".to_string()));
+        }
+
+        // Calculate total images needed
+        let total_images: usize = cards.iter().map(|(_, qty)| *qty as usize).sum();
+        let mut current_progress = 0;
+
+        // Collect all images
+        let mut images = Vec::new();
+        
+        for (card, quantity) in cards {
+            for _ in 0..*quantity {
+                progress_callback(current_progress, total_images);
+                
+                // Get front image using global cache
+                let front_image = get_or_fetch_image(&card.border_crop).await?;
+                images.push(front_image);
+                
+                // Get back image if it exists
+                if let Some(back_url) = &card.border_crop_back {
+                    let back_image = get_or_fetch_image(back_url).await?;
+                    images.push(back_image);
+                }
+                
+                current_progress += 1;
+            }
+        }
+
+        progress_callback(total_images, total_images);
+        
+        // Generate PDF
+        generate_pdf(images.into_iter(), options)
     }
 
-    /// Clear the image cache
-    pub fn clear_cache(&mut self) {
-        self.cache.clear();
+    /// Get cache statistics (now uses global cache)
+    pub fn cache_size() -> usize {
+        let cache = get_image_cache();
+        let cache_guard = cache.read().unwrap();
+        cache_guard.size()
     }
 
-    /// Remove expired entries from the cache
-    pub fn purge_cache(&mut self) {
-        self.cache.purge_expired();
+    /// Clear the image cache (now uses global cache)
+    pub fn clear_cache() {
+        let cache = get_image_cache();
+        let mut cache_guard = cache.write().unwrap();
+        cache_guard.clear();
     }
 
-    /// Get card name cache information (timestamp and count)
-    pub fn get_card_name_cache_info(&self) -> Option<(time::OffsetDateTime, usize)> {
-        self.card_name_cache.get_cache_info()
+    /// Remove expired entries from the cache (now uses global cache)
+    pub fn purge_cache() {
+        let cache = get_image_cache();
+        let mut cache_guard = cache.write().unwrap();
+        cache_guard.purge_expired();
     }
 
-    /// Clear the card name cache
-    pub fn clear_card_name_cache(&self) -> Result<(), ProxyError> {
-        self.card_name_cache.clear_cache()
+    /// Get card name cache information (timestamp and count) (now uses global function)
+    pub fn get_card_name_cache_info() -> Option<(time::OffsetDateTime, usize)> {
+        get_card_name_cache_info()
+    }
+
+    /// Clear the card name cache (now uses global state)
+    pub fn clear_card_name_cache() -> Result<(), ProxyError> {
+        let cache = CardNameCache::new()?;
+        cache.clear_cache()
     }
 }
 

@@ -34,6 +34,7 @@ lazy_static! {
     static ref API_CALL_HISTORY: Arc<Mutex<Vec<ApiCall>>> = Arc::new(Mutex::new(Vec::new()));
 }
 
+#[derive(Debug)]
 pub struct ScryfallClient {
     client: reqwest::Client,
 }

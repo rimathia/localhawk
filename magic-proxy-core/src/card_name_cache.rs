@@ -15,6 +15,7 @@ struct CachedCardNames {
     cached_at: OffsetDateTime,
 }
 
+#[derive(Debug)]
 pub struct CardNameCache {
     cache_file_path: PathBuf,
 }

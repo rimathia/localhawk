@@ -10,6 +10,7 @@ struct CacheEntry {
     created_at: OffsetDateTime,
 }
 
+#[derive(Debug)]
 pub struct ImageCache {
     cache: HashMap<String, CacheEntry>,
     max_age: Duration,
