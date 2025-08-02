@@ -1,6 +1,6 @@
 use iced::widget::{button, column, container, row, scrollable, text, text_editor};
 use iced::{Element, Length, Task};
-use magic_proxy_core::{DecklistEntry, parse_decklist, get_minimal_scryfall_languages, ProxyGenerator, ScryfallClient, ApiCall, PdfOptions};
+use magic_proxy_core::{DecklistEntry, parse_decklist, get_minimal_scryfall_languages, ProxyGenerator, ScryfallClient, ApiCall, ApiCallType, PdfOptions};
 use rfd::AsyncFileDialog;
 
 #[derive(Debug, Clone)]
@@ -17,6 +17,8 @@ pub enum Message {
     PdfGenerated(Result<Vec<u8>, String>),
     SavePdf,
     FileSaved(Option<String>),
+    ForceUpdateCardNames,
+    CardNamesUpdated(Result<String, String>),
 }
 
 pub struct AppState {
@@ -29,6 +31,7 @@ pub struct AppState {
     show_api_history: bool,
     is_generating_pdf: bool,
     generated_pdf: Option<Vec<u8>>,
+    is_updating_card_names: bool,
 }
 
 impl AppState {
@@ -45,6 +48,7 @@ impl AppState {
             show_api_history: false,
             is_generating_pdf: false,
             generated_pdf: None,
+            is_updating_card_names: false,
         }
     }
 }
@@ -279,6 +283,51 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 state.display_text = "Save cancelled.".to_string();
             }
         }
+        Message::ForceUpdateCardNames => {
+            state.is_updating_card_names = true;
+            state.error_message = None;
+
+            return Task::perform(
+                async {
+                    match ProxyGenerator::new() {
+                        Ok(mut generator) => {
+                            match generator.force_update_card_lookup().await {
+                                Ok(_) => {
+                                    // Get cache info after update
+                                    if let Some((timestamp, count)) = generator.get_card_name_cache_info() {
+                                        Ok(format!("Updated {} card names at {}", count, timestamp.format(&time::format_description::well_known::Rfc3339).unwrap_or_else(|_| "unknown time".to_string())))
+                                    } else {
+                                        Ok("Updated card names successfully".to_string())
+                                    }
+                                },
+                                Err(e) => Err(format!("Failed to update card names: {}", e)),
+                            }
+                        }
+                        Err(e) => Err(format!("Failed to create ProxyGenerator: {}", e)),
+                    }
+                },
+                Message::CardNamesUpdated,
+            );
+        }
+        Message::CardNamesUpdated(result) => {
+            state.is_updating_card_names = false;
+            
+            match result {
+                Ok(_) => {
+                    state.display_text = "Card names updated successfully!".to_string();
+                    state.error_message = None;
+                    
+                    // Auto-refresh API history if visible
+                    if state.show_api_history {
+                        state.api_history = ScryfallClient::get_api_call_history();
+                    }
+                }
+                Err(error) => {
+                    state.error_message = Some(error);
+                    state.display_text = "Card name update failed!".to_string();
+                }
+            }
+        }
     }
     Task::none()
 }
@@ -419,14 +468,29 @@ pub fn view(state: &AppState) -> Element<Message> {
                         .api_history
                         .iter()
                         .map(|call| {
-                            let status_color = if call.success { "✅" } else { "❌" };
+                            let (status_icon, call_type_icon) = match call.call_type {
+                                ApiCallType::NetworkRequest => {
+                                    let status = if call.success { "✅" } else { "❌" };
+                                    (status, "🌐")
+                                },
+                                ApiCallType::CacheHit => ("✅", "💾"),
+                                ApiCallType::CacheMiss => ("⚠️", "💾"),
+                            };
+                            
                             let timestamp_str = call.timestamp.format(&time::format_description::well_known::Rfc3339).unwrap_or_else(|_| "Invalid time".to_string());
                             
+                            let status_code_str = match call.call_type {
+                                ApiCallType::NetworkRequest => format!("[{}]", call.status_code),
+                                ApiCallType::CacheHit => "[CACHE HIT]".to_string(),
+                                ApiCallType::CacheMiss => "[CACHE MISS]".to_string(),
+                            };
+                            
                             text(format!(
-                                "{} {} [{}] {}",
-                                status_color,
+                                "{} {} {} {} {}",
+                                status_icon,
+                                call_type_icon,
                                 timestamp_str,
-                                call.status_code,
+                                status_code_str,
                                 call.url
                             ))
                             .size(12)
@@ -451,6 +515,17 @@ pub fn view(state: &AppState) -> Element<Message> {
                 button("Clear")
                     .on_press(Message::ClearApiHistory)
                     .padding(5),
+                button(if state.is_updating_card_names {
+                    "Updating..."
+                } else {
+                    "Update Card Names"
+                })
+                .on_press_maybe(if state.is_updating_card_names {
+                    None
+                } else {
+                    Some(Message::ForceUpdateCardNames)
+                })
+                .padding(5),
             ]
             .spacing(10),
             history_list,

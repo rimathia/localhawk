@@ -4,13 +4,15 @@ pub mod pdf;
 pub mod cache;
 pub mod decklist;
 pub mod lookup;
+pub mod card_name_cache;
 
 pub use error::ProxyError;
-pub use scryfall::{ScryfallClient, Card, CardSearchResult, ScryfallCardNames, models::get_minimal_scryfall_languages, client::ApiCall};
+pub use scryfall::{ScryfallClient, Card, CardSearchResult, ScryfallCardNames, models::get_minimal_scryfall_languages, client::{ApiCall, ApiCallType}};
 pub use pdf::{PdfOptions, PageSize, generate_pdf};
 pub use cache::ImageCache;
 pub use decklist::{DecklistEntry, ParsedDecklistLine, parse_line, parse_decklist};
 pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};
+pub use card_name_cache::CardNameCache;
 
 /// Main interface for generating Magic card proxy sheets
 pub struct ProxyGenerator {
@@ -18,6 +20,7 @@ pub struct ProxyGenerator {
     cache: ImageCache,
     cards: Vec<(Card, u32)>,
     card_lookup: Option<CardNameLookup>,
+    card_name_cache: CardNameCache,
 }
 
 impl ProxyGenerator {
@@ -28,6 +31,7 @@ impl ProxyGenerator {
             cache: ImageCache::new(),
             cards: Vec::new(),
             card_lookup: None,
+            card_name_cache: CardNameCache::new()?,
         })
     }
 
@@ -38,7 +42,14 @@ impl ProxyGenerator {
 
     /// Get all card names from Scryfall and initialize fuzzy matching
     pub async fn initialize_card_lookup(&mut self) -> Result<(), ProxyError> {
-        let card_names = self.scryfall.get_card_names().await?;
+        let card_names = self.card_name_cache.get_card_names(&self.scryfall, false).await?;
+        self.card_lookup = Some(CardNameLookup::from_card_names(&card_names.names));
+        Ok(())
+    }
+
+    /// Force update card names from Scryfall and reinitialize fuzzy matching
+    pub async fn force_update_card_lookup(&mut self) -> Result<(), ProxyError> {
+        let card_names = self.card_name_cache.get_card_names(&self.scryfall, true).await?;
         self.card_lookup = Some(CardNameLookup::from_card_names(&card_names.names));
         Ok(())
     }
@@ -153,6 +164,16 @@ impl ProxyGenerator {
     /// Remove expired entries from the cache
     pub fn purge_cache(&mut self) {
         self.cache.purge_expired();
+    }
+
+    /// Get card name cache information (timestamp and count)
+    pub fn get_card_name_cache_info(&self) -> Option<(time::OffsetDateTime, usize)> {
+        self.card_name_cache.get_cache_info()
+    }
+
+    /// Clear the card name cache
+    pub fn clear_card_name_cache(&self) -> Result<(), ProxyError> {
+        self.card_name_cache.clear_cache()
     }
 }
 

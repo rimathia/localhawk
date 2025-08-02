@@ -17,6 +17,14 @@ pub struct ApiCall {
     pub timestamp: OffsetDateTime,
     pub status_code: u16,
     pub success: bool,
+    pub call_type: ApiCallType,
+}
+
+#[derive(Debug, Clone)]
+pub enum ApiCallType {
+    NetworkRequest,
+    CacheHit,
+    CacheMiss,
 }
 
 // Use a blocking mutex since we are only holding the lock to find out when we can call
@@ -70,6 +78,7 @@ impl ScryfallClient {
                     timestamp,
                     status_code,
                     success,
+                    call_type: ApiCallType::NetworkRequest,
                 };
                 
                 if let Ok(mut history) = API_CALL_HISTORY.lock() {
@@ -91,6 +100,7 @@ impl ScryfallClient {
                     timestamp,
                     status_code: 0, // Unknown status for network errors
                     success: false,
+                    call_type: ApiCallType::NetworkRequest,
                 };
                 
                 if let Ok(mut history) = API_CALL_HISTORY.lock() {
@@ -125,6 +135,26 @@ impl ScryfallClient {
     pub fn clear_api_call_history() {
         if let Ok(mut history) = API_CALL_HISTORY.lock() {
             history.clear();
+        }
+    }
+
+    /// Record a cache operation (hit or miss)
+    pub fn record_cache_operation(url: &str, call_type: ApiCallType) {
+        let api_call = ApiCall {
+            url: url.to_string(),
+            timestamp: OffsetDateTime::now_utc(),
+            status_code: 200, // Cache operations are always "successful"
+            success: true,
+            call_type,
+        };
+
+        if let Ok(mut history) = API_CALL_HISTORY.lock() {
+            history.push(api_call);
+            // Keep only the last MAX_API_HISTORY calls to prevent memory issues
+            if history.len() > MAX_API_HISTORY {
+                let excess = history.len() - MAX_API_HISTORY;
+                history.drain(0..excess);
+            }
         }
     }
 }

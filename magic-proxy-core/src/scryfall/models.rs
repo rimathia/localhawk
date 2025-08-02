@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use time::OffsetDateTime;
 use crate::error::ProxyError;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ScryfallCardNames {
     pub object: String,
     pub uri: String,
