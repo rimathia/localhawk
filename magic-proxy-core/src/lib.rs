@@ -199,17 +199,17 @@ impl ProxyGenerator {
     }
 
     /// Clear the image cache (now uses global cache)
-    pub fn clear_cache() {
+    pub fn clear_cache() -> Result<(), ProxyError> {
         let cache = get_image_cache();
         let mut cache_guard = cache.write().unwrap();
-        cache_guard.clear();
+        cache_guard.clear()
     }
 
-    /// Remove expired entries from the cache (now uses global cache)
-    pub fn purge_cache() {
+    /// Force evict a specific image from cache
+    pub fn force_evict_image(url: &str) -> Result<(), ProxyError> {
         let cache = get_image_cache();
         let mut cache_guard = cache.write().unwrap();
-        cache_guard.purge_expired();
+        cache_guard.force_evict(url)
     }
 
     /// Get card name cache information (timestamp and count) (now uses global function)
@@ -301,11 +301,7 @@ mod tests {
         assert_eq!(get_image_cache().read().unwrap().size(), 0);
 
         // Test clear cache (should not panic on empty cache)
-        ProxyGenerator::clear_cache();
-        assert_eq!(get_image_cache().read().unwrap().size(), 0);
-
-        // Test purge cache (should not panic on empty cache)
-        get_image_cache().write().unwrap().purge_expired();
+        ProxyGenerator::clear_cache().unwrap();
         assert_eq!(get_image_cache().read().unwrap().size(), 0);
     }
 

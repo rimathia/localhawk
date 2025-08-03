@@ -15,7 +15,11 @@ pub fn get_scryfall_client() -> &'static ScryfallClient {
 }
 
 pub fn get_image_cache() -> &'static Arc<RwLock<ImageCache>> {
-    IMAGE_CACHE.get_or_init(|| Arc::new(RwLock::new(ImageCache::new())))
+    IMAGE_CACHE.get_or_init(|| {
+        Arc::new(RwLock::new(
+            ImageCache::new().expect("Failed to initialize image cache")
+        ))
+    })
 }
 
 pub fn get_card_lookup() -> &'static Arc<RwLock<Option<CardNameLookup>>> {
@@ -105,24 +109,26 @@ pub async fn get_or_fetch_image(url: &str) -> Result<DynamicImage, ProxyError> {
     let cache = get_image_cache();
     let client = get_scryfall_client();
 
-    let cached_image = (|| {
-        let ca = cache.read().unwrap();
-        ca.get(url).map(|x| x.clone())
-    })();
+    // Try to get from cache first (note: this needs mutable access for LRU tracking)
+    let cached_image = {
+        let mut cache_guard = cache.write().unwrap();
+        cache_guard.get(url).map(|x| x.clone())
+    };
     
     match cached_image {
         Some(image) => {
-            debug!(url = %url, "Image cache HIT");
-            Ok(image.clone())
+            Ok(image)
         },
         None => {
             debug!(url = %url, "Image cache MISS, fetching from network");
             let new_image = client.get_image(url).await?;
-            cache
-                .write()
-                .unwrap()
-                .insert(url.to_string(), new_image.clone());
-            debug!(url = %url, "Image cached");
+            
+            // Insert into cache (this handles disk persistence and LRU eviction)
+            {
+                let mut cache_guard = cache.write().unwrap();
+                cache_guard.insert(url.to_string(), new_image.clone())?;
+            }
+            
             Ok(new_image)
         }
     }

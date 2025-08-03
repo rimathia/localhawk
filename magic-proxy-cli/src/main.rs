@@ -120,9 +120,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(pdf_data) => {
                     std::fs::write(&output, pdf_data)?;
                     println!("PDF saved to: {}", output.display());
+                    let cache = get_image_cache();
+                    let cache_guard = cache.read().unwrap();
                     println!(
-                        "Cache size: {} images",
-                        get_image_cache().read().unwrap().size()
+                        "Cache size: {} images ({} MB)",
+                        cache_guard.size(),
+                        cache_guard.size_bytes() / (1024 * 1024)
                     );
                 }
                 Err(e) => {
