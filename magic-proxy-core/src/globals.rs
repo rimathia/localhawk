@@ -26,6 +26,15 @@ pub fn get_card_lookup() -> &'static Arc<RwLock<Option<CardNameLookup>>> {
     CARD_LOOKUP.get_or_init(|| Arc::new(RwLock::new(None)))
 }
 
+// Eager initialization function - call at application startup
+pub fn initialize_caches() -> Result<(), ProxyError> {
+    // Initialize image cache (loads from disk)
+    let _image_cache = get_image_cache();
+    info!("Image cache initialized at startup");
+    
+    Ok(())
+}
+
 // Convenience functions
 pub async fn ensure_card_lookup_initialized() -> Result<(), ProxyError> {
     let lookup_ref = get_card_lookup();
@@ -138,5 +147,23 @@ pub fn get_card_name_cache_info() -> Option<(time::OffsetDateTime, usize)> {
     match CardNameCache::new() {
         Ok(cache) => cache.get_cache_info(),
         Err(_) => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_initialize_caches() {
+        // Should not panic and should return Ok
+        let result = initialize_caches();
+        assert!(result.is_ok());
+        
+        // Cache should be initialized and accessible
+        let cache = get_image_cache();
+        let cache_guard = cache.read().unwrap();
+        // Should not panic when accessing cache methods
+        let _size = cache_guard.size();
     }
 }

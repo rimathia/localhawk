@@ -15,6 +15,12 @@ fn init_logging() {
 fn main() -> iced::Result {
     init_logging();
     
+    // Initialize caches at startup
+    if let Err(e) = magic_proxy_core::initialize_caches() {
+        eprintln!("Failed to initialize caches: {}", e);
+        std::process::exit(1);
+    }
+    
     iced::application("Magic Card Proxy Generator", app::update, app::view)
         .run_with(app::initialize)
 }

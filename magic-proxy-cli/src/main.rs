@@ -37,6 +37,12 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
+    
+    // Initialize caches at startup
+    if let Err(e) = magic_proxy_core::initialize_caches() {
+        eprintln!("Failed to initialize caches: {}", e);
+        std::process::exit(1);
+    }
 
     let cli = Cli::parse();
     let mut generator = ProxyGenerator::new()?;
