@@ -3,6 +3,7 @@ use crate::{
 };
 use printpdf::image_crate::DynamicImage;
 use std::sync::{Arc, OnceLock, RwLock};
+use tracing::{info, debug};
 
 // Global singletons - initialized once, shared everywhere
 static SCRYFALL_CLIENT: OnceLock<ScryfallClient> = OnceLock::new();
@@ -30,23 +31,55 @@ pub async fn ensure_card_lookup_initialized() -> Result<(), ProxyError> {
     };
 
     if needs_init {
+        info!("Initializing CardNameLookup from disk cache");
         let client = get_scryfall_client();
         let cache = CardNameCache::new()?;
+        
+        // This will log disk cache operations internally
         let card_names = cache.get_card_names(client, false).await?;
+        
+        info!(
+            card_count = card_names.names.len(),
+            "Building fuzzy matching index from card names"
+        );
+        let start = std::time::Instant::now();
         let lookup = CardNameLookup::from_card_names(&card_names.names);
+        let duration = start.elapsed();
+        
+        info!(
+            duration_ms = duration.as_millis(),
+            "CardNameLookup fuzzy index construction complete"
+        );
 
         let mut lookup_guard = lookup_ref.write().unwrap();
         *lookup_guard = Some(lookup);
+    } else {
+        debug!("CardNameLookup already initialized");
     }
 
     Ok(())
 }
 
 pub async fn force_update_card_lookup() -> Result<(), ProxyError> {
+    info!("Force updating CardNameLookup from Scryfall API");
     let client = get_scryfall_client();
     let cache = CardNameCache::new()?;
+    
+    // This will log the forced API fetch internally
     let card_names = cache.get_card_names(client, true).await?;
+    
+    info!(
+        card_count = card_names.names.len(),
+        "Building new fuzzy matching index from fresh data"
+    );
+    let start = std::time::Instant::now();
     let lookup = CardNameLookup::from_card_names(&card_names.names);
+    let duration = start.elapsed();
+    
+    info!(
+        duration_ms = duration.as_millis(),
+        "Force update: CardNameLookup fuzzy index construction complete"
+    );
 
     let lookup_ref = get_card_lookup();
     let mut lookup_guard = lookup_ref.write().unwrap();
@@ -58,7 +91,14 @@ pub async fn force_update_card_lookup() -> Result<(), ProxyError> {
 pub fn find_card_name(name: &str) -> Option<NameLookupResult> {
     let lookup_ref = get_card_lookup();
     let lookup = lookup_ref.read().unwrap();
-    lookup.as_ref()?.find(name)
+    let result = lookup.as_ref()?.find(name);
+    
+    match &result {
+        Some(found) => debug!(input = %name, found = %found.name, "Fuzzy match found"),
+        None => debug!(input = %name, "No fuzzy match found"),
+    }
+    
+    result
 }
 
 pub async fn get_or_fetch_image(url: &str) -> Result<DynamicImage, ProxyError> {
@@ -69,14 +109,20 @@ pub async fn get_or_fetch_image(url: &str) -> Result<DynamicImage, ProxyError> {
         let ca = cache.read().unwrap();
         ca.get(url).map(|x| x.clone())
     })();
+    
     match cached_image {
-        Some(image) => Ok(image.clone()),
+        Some(image) => {
+            debug!(url = %url, "Image cache HIT");
+            Ok(image.clone())
+        },
         None => {
+            debug!(url = %url, "Image cache MISS, fetching from network");
             let new_image = client.get_image(url).await?;
             cache
                 .write()
                 .unwrap()
                 .insert(url.to_string(), new_image.clone());
+            debug!(url = %url, "Image cached");
             Ok(new_image)
         }
     }

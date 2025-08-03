@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use time::{Duration, OffsetDateTime};
+use tracing::{info, debug, warn};
 
 const CACHE_DURATION_DAYS: i64 = 1;
 
@@ -40,32 +41,69 @@ impl CardNameCache {
     pub async fn get_card_names(&self, client: &ScryfallClient, force_update: bool) -> Result<ScryfallCardNames, ProxyError> {
         // Try to load from cache first (unless force update is requested)
         if !force_update {
+            debug!(cache_file = %self.cache_file_path.display(), "Checking disk cache");
+            
             if let Ok(cached) = self.load_from_cache() {
+                let age = OffsetDateTime::now_utc() - cached.cached_at;
+                info!(
+                    age_hours = age.whole_hours(),
+                    card_count = cached.data.names.len(),
+                    "Loaded card names from disk cache"
+                );
+                
                 if self.is_cache_valid(&cached) {
-                    log::info!("CACHE HIT: Using cached card names from {}", cached.cached_at);
+                    info!("Disk cache is valid, using cached data");
                     ScryfallClient::record_cache_operation("https://api.scryfall.com/catalog/card-names", ApiCallType::CacheHit);
                     return Ok(cached.data);
+                } else {
+                    warn!(max_age_days = CACHE_DURATION_DAYS, "Disk cache expired");
                 }
+            } else {
+                info!("No valid disk cache found");
             }
+        } else {
+            info!("Force update requested, skipping disk cache");
         }
 
         // Cache miss or expired - fetch from API
-        log::info!("CACHE MISS: Fetching fresh card names from Scryfall API");
+        info!("Fetching fresh card names from Scryfall API");
         ScryfallClient::record_cache_operation("https://api.scryfall.com/catalog/card-names", ApiCallType::CacheMiss);
         let card_names = client.get_card_names().await?;
         
         // Save to cache
         self.save_to_cache(&card_names)?;
+        info!(
+            card_count = card_names.names.len(),
+            cache_file = %self.cache_file_path.display(),
+            "Saved fresh card names to disk cache"
+        );
         
         Ok(card_names)
     }
 
     fn load_from_cache(&self) -> Result<CachedCardNames, ProxyError> {
+        if !self.cache_file_path.exists() {
+            debug!("Cache file does not exist: {}", self.cache_file_path.display());
+            return Err(ProxyError::Cache("Cache file not found".to_string()));
+        }
+
+        let file_size = std::fs::metadata(&self.cache_file_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
+        
+        debug!(
+            file_size_kb = file_size / 1024,
+            "Reading cache file from disk"
+        );
+
         let content = fs::read_to_string(&self.cache_file_path)
             .map_err(|e| ProxyError::Cache(format!("Failed to read cache file: {}", e)))?;
             
-        serde_json::from_str(&content)
-            .map_err(|e| ProxyError::Cache(format!("Failed to parse cache file: {}", e)))
+        let parsed = serde_json::from_str(&content)
+            .map_err(|e| ProxyError::Cache(format!("Failed to parse cache file: {}", e)))?;
+
+        debug!("Successfully parsed cache file");
+        Ok(parsed)
     }
 
     fn save_to_cache(&self, card_names: &ScryfallCardNames) -> Result<(), ProxyError> {

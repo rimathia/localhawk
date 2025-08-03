@@ -12,6 +12,7 @@ printpdf = { workspace = true }
 time = { workspace = true }
 lazy_static = { workspace = true }
 log = { workspace = true }
+tracing = "0.1"
 directories = { workspace = true }
 itertools = "0.13"
 regex = { workspace = true }
