@@ -20,7 +20,7 @@ impl ScryfallClient {
     pub async fn search_card(&self, name: &str) -> Result<CardSearchResult, ProxyError> {
         let encoded_name = encode_card_name(name);
         let uri = format!(
-            "https://api.scryfall.com/cards/search?q=name:!{}&unique=prints",
+            "https://api.scryfall.com/cards/search?q=name=\"{}\"&unique=prints",
             encoded_name
         );
         
