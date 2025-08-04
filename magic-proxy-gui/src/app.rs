@@ -7,7 +7,6 @@ use rfd::AsyncFileDialog;
 pub enum Message {
     DecklistAction(text_editor::Action),
     ParseDecklist,
-    ParseDecklistWithFuzzyMatching,
     DecklistParsed(Vec<DecklistEntry>),
     ClearDecklist,
     GeneratePdf,
@@ -32,7 +31,7 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         Self {
-            display_text: "Welcome to Magic Card Proxy Generator!\nOffline parsing available. Use 'Parse with Fuzzy Matching' for network-enabled card name resolution.".to_string(),
+            display_text: "Welcome to Magic Card Proxy Generator!\nParsing includes fuzzy matching, set/language awareness, and card name resolution.".to_string(),
             decklist_content: text_editor::Content::with_text(
                 "4 Lightning Bolt\n1 Black Lotus [VMA]\n2 Counterspell [7ED]\n3 Giant Growth\n1 Memory Lapse [ja]",
             ),
@@ -65,31 +64,7 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             state.is_parsing = true;
             state.error_message = None;
 
-            // Use the same parsing logic as fuzzy matching - just parse and resolve with global caches
-            return Task::perform(
-                async move {
-                    match ProxyGenerator::parse_and_resolve_decklist(&decklist_text).await {
-                        Ok(cards) => cards,
-                        Err(e) => {
-                            log::error!("Failed to parse decklist: {}", e);
-                            Vec::new() // Return empty list on error
-                        }
-                    }
-                },
-                Message::DecklistParsed,
-            );
-        }
-        Message::ParseDecklistWithFuzzyMatching => {
-            let decklist_text = state.decklist_content.text();
-            if decklist_text.trim().is_empty() {
-                state.error_message = Some("Please enter a decklist first!".to_string());
-                return Task::none();
-            }
-
-            state.is_parsing = true;
-            state.error_message = None;
-
-            // Same as regular parsing now - both use network-enabled parsing with global caches
+            // Parse and resolve decklist with global caches (fuzzy matching, set/language awareness)
             return Task::perform(
                 async move {
                     match ProxyGenerator::parse_and_resolve_decklist(&decklist_text).await {
@@ -285,17 +260,6 @@ pub fn view(state: &AppState) -> Element<Message> {
                 None
             } else {
                 Some(Message::ParseDecklist)
-            })
-            .padding(10),
-            button(if state.is_parsing {
-                "Parsing..."
-            } else {
-                "Parse & Resolve Names"
-            })
-            .on_press_maybe(if state.is_parsing {
-                None
-            } else {
-                Some(Message::ParseDecklistWithFuzzyMatching)
             })
             .padding(10),
             button("Clear Decklist")
