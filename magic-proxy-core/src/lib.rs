@@ -7,14 +7,17 @@ pub mod lookup;
 pub mod pdf;
 pub mod scryfall;
 pub mod search_results_cache;
+pub mod set_codes_cache;
 
 pub use cache::ImageCache;
 pub use card_name_cache::CardNameCache;
 pub use search_results_cache::SearchResultsCache;
+pub use set_codes_cache::SetCodesCache;
 pub use decklist::{DecklistEntry, ParsedDecklistLine, parse_decklist, parse_line};
 pub use error::ProxyError;
 pub use globals::{
     ensure_card_lookup_initialized, find_card_name, force_update_card_lookup,
+    ensure_set_codes_initialized, force_update_set_codes,
     get_card_name_cache_info, get_image_cache, get_or_fetch_image, get_or_fetch_search_results,
     get_scryfall_client, initialize_caches,
 };
@@ -22,7 +25,7 @@ pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};
 pub use pdf::{PageSize, PdfOptions, generate_pdf};
 pub use scryfall::{
     Card, CardSearchResult, ScryfallCardNames, ScryfallClient,
-    models::get_minimal_scryfall_languages,
+    models::{get_minimal_scryfall_languages, ScryfallSetCodes},
 };
 
 /// Main interface for generating Magic card proxy sheets
@@ -63,11 +66,20 @@ impl ProxyGenerator {
     ) -> Result<Vec<DecklistEntry>, ProxyError> {
         use scryfall::models::get_minimal_scryfall_languages;
 
-        // Ensure global card lookup is initialized
+        // Ensure global card lookup and set codes are initialized
         ensure_card_lookup_initialized().await?;
+        ensure_set_codes_initialized().await?;
 
         let languages = get_minimal_scryfall_languages();
-        let parsed_lines = parse_decklist(decklist_text, &languages);
+        
+        // Get set codes from global cache
+        let set_codes = {
+            let set_codes_ref = crate::globals::get_set_codes_cache();
+            let codes_guard = set_codes_ref.read().unwrap();
+            codes_guard.as_ref().cloned().unwrap_or_default()
+        };
+        
+        let parsed_lines = parse_decklist(decklist_text, &languages, &set_codes);
 
         let mut resolved_entries = Vec::new();
         for line in parsed_lines {

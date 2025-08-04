@@ -1,6 +1,6 @@
 use iced::widget::{button, column, container, row, scrollable, text, text_editor};
 use iced::{Element, Length, Task};
-use magic_proxy_core::{DecklistEntry, parse_decklist, get_minimal_scryfall_languages, ProxyGenerator, PdfOptions, force_update_card_lookup, get_card_name_cache_info};
+use magic_proxy_core::{DecklistEntry, ProxyGenerator, PdfOptions, force_update_card_lookup, get_card_name_cache_info};
 use rfd::AsyncFileDialog;
 
 #[derive(Debug, Clone)]
@@ -65,20 +65,16 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             state.is_parsing = true;
             state.error_message = None;
 
+            // Use the same parsing logic as fuzzy matching - just parse and resolve with global caches
             return Task::perform(
                 async move {
-                    // Parse the decklist without network calls (no fuzzy matching)
-                    let languages = get_minimal_scryfall_languages();
-                    let parsed_lines = parse_decklist(&decklist_text, &languages);
-                    
-                    let mut resolved_entries = Vec::new();
-                    for line in parsed_lines {
-                        if let Some(entry) = line.as_entry() {
-                            resolved_entries.push(entry);
+                    match ProxyGenerator::parse_and_resolve_decklist(&decklist_text).await {
+                        Ok(cards) => cards,
+                        Err(e) => {
+                            log::error!("Failed to parse decklist: {}", e);
+                            Vec::new() // Return empty list on error
                         }
                     }
-                    
-                    resolved_entries
                 },
                 Message::DecklistParsed,
             );
@@ -93,24 +89,14 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             state.is_parsing = true;
             state.error_message = None;
 
+            // Same as regular parsing now - both use network-enabled parsing with global caches
             return Task::perform(
                 async move {
-                    // Use the new static method - no expensive ProxyGenerator initialization!
                     match ProxyGenerator::parse_and_resolve_decklist(&decklist_text).await {
                         Ok(cards) => cards,
                         Err(e) => {
-                            log::error!("Failed to parse decklist with fuzzy matching: {}", e);
-                            // Fall back to offline parsing
-                            let languages = get_minimal_scryfall_languages();
-                            let parsed_lines = parse_decklist(&decklist_text, &languages);
-                            
-                            let mut resolved_entries = Vec::new();
-                            for line in parsed_lines {
-                                if let Some(entry) = line.as_entry() {
-                                    resolved_entries.push(entry);
-                                }
-                            }
-                            resolved_entries
+                            log::error!("Failed to parse decklist: {}", e);
+                            Vec::new() // Return empty list on error
                         }
                     }
                 },
@@ -150,12 +136,20 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         match ProxyGenerator::search_card(&entry.name).await {
                             Ok(search_result) => {
                                 if let Some(card) = search_result.cards.into_iter().find(|c| {
-                                    // Try to match set if specified
-                                    if let Some(ref entry_set) = entry.set {
+                                    // Try to match both set and language if specified
+                                    let set_matches = if let Some(ref entry_set) = entry.set {
                                         c.set.to_lowercase() == entry_set.to_lowercase()
                                     } else {
-                                        true // Take first result if no set specified
-                                    }
+                                        true // No set filter
+                                    };
+                                    
+                                    let lang_matches = if let Some(ref entry_lang) = entry.lang {
+                                        c.language.to_lowercase() == entry_lang.to_lowercase()
+                                    } else {
+                                        true // No language filter
+                                    };
+                                    
+                                    set_matches && lang_matches
                                 }) {
                                     card_list.push((card, entry.multiple as u32));
                                 }
@@ -285,7 +279,7 @@ pub fn view(state: &AppState) -> Element<Message> {
             button(if state.is_parsing {
                 "Parsing..."
             } else {
-                "Parse Decklist (Offline)"
+                "Parse Decklist"
             })
             .on_press_maybe(if state.is_parsing {
                 None
@@ -296,7 +290,7 @@ pub fn view(state: &AppState) -> Element<Message> {
             button(if state.is_parsing {
                 "Parsing..."
             } else {
-                "Parse with Fuzzy Matching"
+                "Parse & Resolve Names"
             })
             .on_press_maybe(if state.is_parsing {
                 None
@@ -320,12 +314,12 @@ pub fn view(state: &AppState) -> Element<Message> {
                     .iter()
                     .map(|card| {
                         let set_info = if let Some(set) = &card.set {
-                            format!(" [{}]", set.to_uppercase())
+                            format!(" • Set: {}", set.to_uppercase())
                         } else {
                             String::new()
                         };
                         let lang_info = if let Some(lang) = &card.lang {
-                            format!(" ({})", lang.to_uppercase())
+                            format!(" • Lang: {}", lang.to_uppercase())
                         } else {
                             String::new()
                         };

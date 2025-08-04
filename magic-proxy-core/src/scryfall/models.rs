@@ -13,6 +13,30 @@ pub struct ScryfallCardNames {
     pub names: Vec<String>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ScryfallSetCodes {
+    pub date: Option<OffsetDateTime>,
+    pub codes: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ScryfallSet {
+    pub object: String,
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub released_at: Option<String>,
+    pub set_type: String,
+    pub card_count: i32,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ScryfallSetsResponse {
+    pub object: String,
+    pub has_more: bool,
+    pub data: Vec<ScryfallSet>,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct ScryfallSearchAnswer {
     pub object: String,
@@ -124,11 +148,12 @@ pub struct CardSearchResult {
     pub total_found: usize,
 }
 
+/// Returns all language codes supported by Scryfall (18 languages as of 2025)
 pub fn get_minimal_scryfall_languages() -> HashSet<String> {
     HashSet::from(
         [
             "en", "es", "fr", "de", "it", "pt", "ja", "ko", "ru", "zhs", "zht", "he", "la", "grc",
-            "ar", "sa", "ph",
+            "ar", "sa", "ph", "qya",
         ]
         .map(String::from),
     )
@@ -204,6 +229,7 @@ mod tests {
         assert!(languages.contains("ja"));
         assert!(languages.contains("fr"));
         assert!(languages.contains("de"));
-        assert_eq!(languages.len(), 17);
+        assert!(languages.contains("qya")); // Quenya
+        assert_eq!(languages.len(), 18);
     }
 }

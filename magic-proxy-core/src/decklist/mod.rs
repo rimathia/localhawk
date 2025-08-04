@@ -58,20 +58,27 @@ fn parse_multiple(group: Option<Match>) -> i32 {
     }
 }
 
-fn parse_set(group: Option<Match>) -> Option<String> {
-    Some(group?.as_str().parse::<String>().ok()?.to_lowercase())
-}
 
-fn parse_lang(group: Option<Match>, languages: &HashSet<String>) -> Option<String> {
-    let lang = group?.as_str().parse::<String>().ok()?.to_lowercase();
-    if languages.contains(&lang) {
-        Some(lang)
+fn parse_set_and_lang(group: Option<Match>, languages: &HashSet<String>, set_codes: &HashSet<String>) -> (Option<String>, Option<String>) {
+    if let Some(code) = group {
+        let code_str = code.as_str().to_lowercase();
+        
+        if set_codes.contains(&code_str) {
+            // It's a valid set code
+            (Some(code_str), None)
+        } else if languages.contains(&code_str) {
+            // It's a language code
+            (None, Some(code_str))
+        } else {
+            // Unknown code - default to treating as set (for backward compatibility)
+            (Some(code_str), None)
+        }
     } else {
-        None
+        (None, None)
     }
 }
 
-pub fn parse_line(line: &str, languages: &HashSet<String>) -> Option<DecklistEntry> {
+pub fn parse_line(line: &str, languages: &HashSet<String>, set_codes: &HashSet<String>) -> Option<DecklistEntry> {
     lazy_static! {
         static ref REMNS: Regex =
             Regex::new(r"^\s*(\d*)\s*([^\(\[\$\t]*)[\s\(\[]*([\dA-Za-z]{2,3})?").unwrap();
@@ -82,8 +89,7 @@ pub fn parse_line(line: &str, languages: &HashSet<String>) -> Option<DecklistEnt
             let multiple = parse_multiple(mns.get(1));
             let name = mns.get(2)?.as_str().trim().to_string();
             let set_or_lang = mns.get(3);
-            let set = parse_set(set_or_lang);
-            let lang = parse_lang(set_or_lang, languages);
+            let (set, lang) = parse_set_and_lang(set_or_lang, languages, set_codes);
             let name_lowercase = name.to_lowercase();
             let non_entries = ["deck", "decklist", "sideboard"];
             if non_entries.iter().any(|s| **s == name_lowercase) {
@@ -104,6 +110,7 @@ pub fn parse_line(line: &str, languages: &HashSet<String>) -> Option<DecklistEnt
 pub fn parse_decklist<'a>(
     decklist: &'a str,
     languages: &HashSet<String>,
+    set_codes: &HashSet<String>,
 ) -> Vec<ParsedDecklistLine<'a>> {
     decklist
         .lines()
@@ -111,7 +118,7 @@ pub fn parse_decklist<'a>(
         .filter(|s| !s.is_empty())
         .map(|s| ParsedDecklistLine {
             line: s,
-            entry: parse_line(s, languages),
+            entry: parse_line(s, languages, set_codes),
         })
         .collect()
 }
@@ -123,12 +130,14 @@ mod tests {
 
     fn parse_line_default(s: &str) -> Option<DecklistEntry> {
         let minimal = get_minimal_scryfall_languages();
-        parse_line(s, &minimal)
+        let set_codes = std::collections::HashSet::new(); // Empty for tests
+        parse_line(s, &minimal, &set_codes)
     }
 
     fn parse_decklist_default(s: &str) -> Vec<ParsedDecklistLine> {
         let minimal = get_minimal_scryfall_languages();
-        parse_decklist(s, &minimal)
+        let set_codes = std::collections::HashSet::new(); // Empty for tests
+        parse_decklist(s, &minimal, &set_codes)
     }
 
     #[test]
@@ -183,7 +192,7 @@ mod tests {
     fn japanese_printing() {
         assert_eq!(
             parse_line_default("memory lapse [ja]").unwrap(),
-            DecklistEntry::new(1, "memory lapse", Some("ja"), Some("ja"))
+            DecklistEntry::new(1, "memory lapse", None, Some("ja")) // Only lang="ja", not set="ja"
         );
     }
 

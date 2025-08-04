@@ -1,8 +1,9 @@
 use crate::{
     CardNameCache, CardNameLookup, ImageCache, NameLookupResult, ProxyError, 
-    ScryfallClient, SearchResultsCache,
+    ScryfallClient, SearchResultsCache, SetCodesCache,
 };
 use printpdf::image_crate::DynamicImage;
+use std::collections::HashSet;
 use std::sync::{Arc, OnceLock, RwLock};
 use tracing::{info, debug};
 
@@ -11,6 +12,7 @@ static SCRYFALL_CLIENT: OnceLock<ScryfallClient> = OnceLock::new();
 static IMAGE_CACHE: OnceLock<Arc<RwLock<ImageCache>>> = OnceLock::new();
 static CARD_LOOKUP: OnceLock<Arc<RwLock<Option<CardNameLookup>>>> = OnceLock::new();
 static SEARCH_RESULTS_CACHE: OnceLock<Arc<RwLock<SearchResultsCache>>> = OnceLock::new();
+static SET_CODES_CACHE: OnceLock<Arc<RwLock<Option<HashSet<String>>>>> = OnceLock::new();
 
 pub fn get_scryfall_client() -> &'static ScryfallClient {
     SCRYFALL_CLIENT.get_or_init(|| ScryfallClient::new().expect("Failed to create ScryfallClient"))
@@ -34,6 +36,10 @@ pub fn get_search_results_cache() -> &'static Arc<RwLock<SearchResultsCache>> {
             SearchResultsCache::new().expect("Failed to initialize search results cache")
         ))
     })
+}
+
+pub fn get_set_codes_cache() -> &'static Arc<RwLock<Option<HashSet<String>>>> {
+    SET_CODES_CACHE.get_or_init(|| Arc::new(RwLock::new(None)))
 }
 
 // Eager initialization function - call at application startup
@@ -126,6 +132,64 @@ pub fn find_card_name(name: &str) -> Option<NameLookupResult> {
     }
     
     result
+}
+
+pub async fn ensure_set_codes_initialized() -> Result<(), ProxyError> {
+    let set_codes_ref = get_set_codes_cache();
+    let needs_init = {
+        let codes = set_codes_ref.read().unwrap();
+        codes.is_none()
+    };
+    if needs_init {
+        info!("Initializing set codes from disk cache");
+        let client = get_scryfall_client();
+        let cache = SetCodesCache::new()?;
+        
+        // This will log disk cache operations internally
+        let set_codes = cache.get_set_codes(client, false).await?;
+        
+        info!(
+            set_code_count = set_codes.codes.len(),
+            "Loaded set codes into memory"
+        );
+        
+        // Convert to HashSet for fast lookups
+        let codes_set: HashSet<String> = set_codes.codes.into_iter().collect();
+        
+        {
+            let mut cache_guard = set_codes_ref.write().unwrap();
+            *cache_guard = Some(codes_set);
+        }
+        
+        info!("Set codes initialization complete");
+    }
+    Ok(())
+}
+
+pub async fn force_update_set_codes() -> Result<(), ProxyError> {
+    info!("Force updating set codes from Scryfall API");
+    let client = get_scryfall_client();
+    let cache = SetCodesCache::new()?;
+    
+    // This will log the forced API fetch internally
+    let set_codes = cache.get_set_codes(client, true).await?;
+    
+    info!(
+        set_code_count = set_codes.codes.len(),
+        "Force update: Fresh set codes loaded from API"
+    );
+    
+    // Convert to HashSet for fast lookups
+    let codes_set: HashSet<String> = set_codes.codes.into_iter().collect();
+    
+    {
+        let set_codes_ref = get_set_codes_cache();
+        let mut cache_guard = set_codes_ref.write().unwrap();
+        *cache_guard = Some(codes_set);
+    }
+    
+    info!("Force update: Set codes cache updated");
+    Ok(())
 }
 
 pub async fn get_or_fetch_image(url: &str) -> Result<DynamicImage, ProxyError> {
