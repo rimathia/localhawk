@@ -1,6 +1,6 @@
 use iced::widget::{button, column, container, row, scrollable, text, text_editor};
 use iced::{Element, Length, Task};
-use magic_proxy_core::{DecklistEntry, parse_decklist, get_minimal_scryfall_languages, ProxyGenerator, ScryfallClient, ApiCall, ApiCallType, PdfOptions, force_update_card_lookup, get_card_name_cache_info};
+use magic_proxy_core::{DecklistEntry, parse_decklist, get_minimal_scryfall_languages, ProxyGenerator, PdfOptions, force_update_card_lookup, get_card_name_cache_info};
 use rfd::AsyncFileDialog;
 
 #[derive(Debug, Clone)]
@@ -10,9 +10,6 @@ pub enum Message {
     ParseDecklistWithFuzzyMatching,
     DecklistParsed(Vec<DecklistEntry>),
     ClearDecklist,
-    RefreshApiHistory,
-    ClearApiHistory,
-    ToggleApiHistoryView,
     GeneratePdf,
     PdfGenerated(Result<Vec<u8>, String>),
     SavePdf,
@@ -27,8 +24,6 @@ pub struct AppState {
     parsed_cards: Vec<DecklistEntry>,
     is_parsing: bool,
     error_message: Option<String>,
-    api_history: Vec<ApiCall>,
-    show_api_history: bool,
     is_generating_pdf: bool,
     generated_pdf: Option<Vec<u8>>,
     is_updating_card_names: bool,
@@ -44,8 +39,6 @@ impl AppState {
             parsed_cards: Vec::new(),
             is_parsing: false,
             error_message: None,
-            api_history: Vec::new(),
-            show_api_history: false,
             is_generating_pdf: false,
             generated_pdf: None,
             is_updating_card_names: false,
@@ -130,29 +123,12 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             state.error_message = None;
             state.display_text = format!("Parsed {} cards successfully!", state.parsed_cards.len());
             
-            // Auto-refresh API history if it's visible
-            if state.show_api_history {
-                state.api_history = ScryfallClient::get_api_call_history();
-            }
         }
         Message::ClearDecklist => {
             state.decklist_content = text_editor::Content::new();
             state.parsed_cards.clear();
             state.error_message = None;
             state.display_text = "Decklist cleared!".to_string();
-        }
-        Message::RefreshApiHistory => {
-            state.api_history = ScryfallClient::get_api_call_history();
-        }
-        Message::ClearApiHistory => {
-            ScryfallClient::clear_api_call_history();
-            state.api_history.clear();
-        }
-        Message::ToggleApiHistoryView => {
-            state.show_api_history = !state.show_api_history;
-            if state.show_api_history {
-                state.api_history = ScryfallClient::get_api_call_history();
-            }
         }
         Message::GeneratePdf => {
             if state.parsed_cards.is_empty() {
@@ -210,10 +186,6 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     state.generated_pdf = Some(pdf_data.clone());
                     state.display_text = format!("PDF generated successfully! {} bytes", pdf_data.len());
                     
-                    // Auto-refresh API history if visible
-                    if state.show_api_history {
-                        state.api_history = ScryfallClient::get_api_call_history();
-                    }
                 }
                 Err(error) => {
                     state.error_message = Some(error);
@@ -291,10 +263,6 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     state.display_text = "Card names updated successfully!".to_string();
                     state.error_message = None;
                     
-                    // Auto-refresh API history if visible
-                    if state.show_api_history {
-                        state.api_history = ScryfallClient::get_api_call_history();
-                    }
                 }
                 Err(error) => {
                     state.error_message = Some(error);
@@ -339,13 +307,6 @@ pub fn view(state: &AppState) -> Element<Message> {
             button("Clear Decklist")
                 .on_press(Message::ClearDecklist)
                 .padding(10),
-            button(if state.show_api_history {
-                "Hide API Debug"
-            } else {
-                "Show API Debug"
-            })
-            .on_press(Message::ToggleApiHistoryView)
-            .padding(10),
         ]
         .spacing(10),
     ]
@@ -434,86 +395,40 @@ pub fn view(state: &AppState) -> Element<Message> {
 
     let display_section = column![text(&state.display_text).size(16),].spacing(10);
 
-    let api_history_section = if state.show_api_history {
-        let history_list = if !state.api_history.is_empty() {
-            scrollable(
-                column(
-                    state
-                        .api_history
-                        .iter()
-                        .map(|call| {
-                            let (status_icon, call_type_icon) = match call.call_type {
-                                ApiCallType::NetworkRequest => {
-                                    let status = if call.success { "✅" } else { "❌" };
-                                    (status, "🌐")
-                                },
-                                ApiCallType::CacheHit => ("✅", "💾"),
-                                ApiCallType::CacheMiss => ("⚠️", "💾"),
-                            };
-                            
-                            let timestamp_str = call.timestamp.format(&time::format_description::well_known::Rfc3339).unwrap_or_else(|_| "Invalid time".to_string());
-                            
-                            let status_code_str = match call.call_type {
-                                ApiCallType::NetworkRequest => format!("[{}]", call.status_code),
-                                ApiCallType::CacheHit => "[CACHE HIT]".to_string(),
-                                ApiCallType::CacheMiss => "[CACHE MISS]".to_string(),
-                            };
-                            
-                            text(format!(
-                                "{} {} {} {} {}",
-                                status_icon,
-                                call_type_icon,
-                                timestamp_str,
-                                status_code_str,
-                                call.url
-                            ))
-                            .size(12)
-                            .into()
-                        })
-                        .collect::<Vec<Element<Message>>>(),
-                )
-                .spacing(2),
-            )
-            .height(Length::Fixed(200.0))
-        } else {
-            scrollable(column![text("No API calls recorded yet.").size(12)])
-                .height(Length::Fixed(50.0))
-        };
-
-        column![
-            row![
-                text("API Call History:").size(16),
-                button("Refresh")
-                    .on_press(Message::RefreshApiHistory)
-                    .padding(5),
-                button("Clear")
-                    .on_press(Message::ClearApiHistory)
-                    .padding(5),
-                button(if state.is_updating_card_names {
-                    "Updating..."
-                } else {
-                    "Update Card Names"
-                })
-                .on_press_maybe(if state.is_updating_card_names {
-                    None
-                } else {
-                    Some(Message::ForceUpdateCardNames)
-                })
-                .padding(5),
-            ]
-            .spacing(10),
-            history_list,
+    let update_section = column![
+        row![
+            text("Card Name Database:").size(16),
+            button(if state.is_updating_card_names {
+                "Updating..."
+            } else {
+                "Update Card Names"
+            })
+            .on_press_maybe(if state.is_updating_card_names {
+                None
+            } else {
+                Some(Message::ForceUpdateCardNames)
+            })
+            .padding(10),
         ]
-        .spacing(10)
-    } else {
-        column![]
-    };
+        .spacing(10),
+        text(get_card_name_cache_info()
+            .map(|(timestamp, count)| {
+                format!("Cache: {} cards, last updated: {}", 
+                    count, 
+                    timestamp.format(&time::format_description::well_known::Rfc3339)
+                        .unwrap_or_else(|_| "Unknown".to_string())
+                )
+            })
+            .unwrap_or_else(|| "No cache found".to_string()))
+        .size(12),
+    ]
+    .spacing(5);
 
     let content = column![
         decklist_section,
         parsed_cards_section,
         pdf_status_section,
-        api_history_section,
+        update_section,
         error_section,
         display_section,
     ]

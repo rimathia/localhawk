@@ -22,7 +22,6 @@ pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};
 pub use pdf::{PageSize, PdfOptions, generate_pdf};
 pub use scryfall::{
     Card, CardSearchResult, ScryfallCardNames, ScryfallClient,
-    client::{ApiCall, ApiCallType},
     models::get_minimal_scryfall_languages,
 };
 

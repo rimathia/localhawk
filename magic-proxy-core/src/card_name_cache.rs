@@ -1,6 +1,5 @@
 use crate::error::ProxyError;
 use crate::scryfall::{ScryfallClient, ScryfallCardNames};
-use crate::scryfall::client::ApiCallType;
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -53,7 +52,6 @@ impl CardNameCache {
                 
                 if self.is_cache_valid(&cached) {
                     info!("Disk cache is valid, using cached data");
-                    ScryfallClient::record_cache_operation("https://api.scryfall.com/catalog/card-names", ApiCallType::CacheHit);
                     return Ok(cached.data);
                 } else {
                     warn!(max_age_days = CACHE_DURATION_DAYS, "Disk cache expired");
@@ -67,7 +65,6 @@ impl CardNameCache {
 
         // Cache miss or expired - fetch from API
         info!("Fetching fresh card names from Scryfall API");
-        ScryfallClient::record_cache_operation("https://api.scryfall.com/catalog/card-names", ApiCallType::CacheMiss);
         let card_names = client.get_card_names().await?;
         
         // Save to cache
