@@ -6,15 +6,17 @@ pub mod globals;
 pub mod lookup;
 pub mod pdf;
 pub mod scryfall;
+pub mod search_results_cache;
 
 pub use cache::ImageCache;
 pub use card_name_cache::CardNameCache;
+pub use search_results_cache::SearchResultsCache;
 pub use decklist::{DecklistEntry, ParsedDecklistLine, parse_decklist, parse_line};
 pub use error::ProxyError;
 pub use globals::{
     ensure_card_lookup_initialized, find_card_name, force_update_card_lookup,
-    get_card_name_cache_info, get_image_cache, get_or_fetch_image, get_scryfall_client,
-    initialize_caches,
+    get_card_name_cache_info, get_image_cache, get_or_fetch_image, get_or_fetch_search_results,
+    get_scryfall_client, initialize_caches,
 };
 pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};
 pub use pdf::{PageSize, PdfOptions, generate_pdf};
@@ -36,9 +38,9 @@ impl ProxyGenerator {
         Ok(ProxyGenerator { cards: Vec::new() })
     }
 
-    /// Search for cards by name
+    /// Search for cards by name (uses cached results)
     pub async fn search_card(name: &str) -> Result<CardSearchResult, ProxyError> {
-        get_scryfall_client().search_card(name).await
+        get_or_fetch_search_results(name).await
     }
 
     /// Get all card names from Scryfall and initialize fuzzy matching (now uses global state)
@@ -298,7 +300,10 @@ mod tests {
 
     #[test]
     fn test_generator_cache_operations() {
-        // Test cache is initially empty
+        // Clear cache to ensure clean test state
+        ProxyGenerator::clear_cache().unwrap();
+        
+        // Test cache is now empty
         assert_eq!(get_image_cache().read().unwrap().size(), 0);
 
         // Test clear cache (should not panic on empty cache)
@@ -363,6 +368,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_generator_default_creation() {
+        // Clear cache to ensure clean test state
+        ProxyGenerator::clear_cache().unwrap();
+        
         // Test that default creation works
         let generator = ProxyGenerator::default();
         assert_eq!(generator.get_cards().len(), 0);

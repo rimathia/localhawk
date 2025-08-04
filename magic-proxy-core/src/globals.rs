@@ -1,5 +1,6 @@
 use crate::{
-    CardNameCache, CardNameLookup, ImageCache, NameLookupResult, ProxyError, ScryfallClient,
+    CardNameCache, CardNameLookup, ImageCache, NameLookupResult, ProxyError, 
+    ScryfallClient, SearchResultsCache,
 };
 use printpdf::image_crate::DynamicImage;
 use std::sync::{Arc, OnceLock, RwLock};
@@ -9,6 +10,7 @@ use tracing::{info, debug};
 static SCRYFALL_CLIENT: OnceLock<ScryfallClient> = OnceLock::new();
 static IMAGE_CACHE: OnceLock<Arc<RwLock<ImageCache>>> = OnceLock::new();
 static CARD_LOOKUP: OnceLock<Arc<RwLock<Option<CardNameLookup>>>> = OnceLock::new();
+static SEARCH_RESULTS_CACHE: OnceLock<Arc<RwLock<SearchResultsCache>>> = OnceLock::new();
 
 pub fn get_scryfall_client() -> &'static ScryfallClient {
     SCRYFALL_CLIENT.get_or_init(|| ScryfallClient::new().expect("Failed to create ScryfallClient"))
@@ -26,11 +28,23 @@ pub fn get_card_lookup() -> &'static Arc<RwLock<Option<CardNameLookup>>> {
     CARD_LOOKUP.get_or_init(|| Arc::new(RwLock::new(None)))
 }
 
+pub fn get_search_results_cache() -> &'static Arc<RwLock<SearchResultsCache>> {
+    SEARCH_RESULTS_CACHE.get_or_init(|| {
+        Arc::new(RwLock::new(
+            SearchResultsCache::new().expect("Failed to initialize search results cache")
+        ))
+    })
+}
+
 // Eager initialization function - call at application startup
 pub fn initialize_caches() -> Result<(), ProxyError> {
     // Initialize image cache (loads from disk)
     let _image_cache = get_image_cache();
     info!("Image cache initialized at startup");
+    
+    // Initialize search results cache (loads from disk)
+    let _search_cache = get_search_results_cache();
+    info!("Search results cache initialized at startup");
     
     Ok(())
 }
@@ -148,6 +162,53 @@ pub fn get_card_name_cache_info() -> Option<(time::OffsetDateTime, usize)> {
         Ok(cache) => cache.get_cache_info(),
         Err(_) => None,
     }
+}
+
+pub async fn get_or_fetch_search_results(card_name: &str) -> Result<crate::scryfall::CardSearchResult, ProxyError> {
+    let client = get_scryfall_client();
+    let cache = get_search_results_cache();
+    
+    // Check cache first (separate scope to release lock)
+    let cached_result = {
+        let mut cache_guard = cache.write().unwrap();
+        if let Some(cached) = cache_guard.cache.get_mut(&card_name.to_lowercase()) {
+            cached.last_accessed = time::OffsetDateTime::now_utc();
+            debug!(card_name = %card_name, "Search results cache HIT");
+            Some(cached.search_results.clone())
+        } else {
+            None
+        }
+    };
+    
+    if let Some(result) = cached_result {
+        return Ok(result);
+    }
+    
+    // Cache miss - fetch from API
+    debug!(card_name = %card_name, "Search results cache MISS, fetching from API");
+    let search_results = client.search_card(card_name).await?;
+    
+    // Insert into cache (separate scope to release lock)
+    {
+        let mut cache_guard = cache.write().unwrap();
+        let cached_result = crate::search_results_cache::CachedSearchResult {
+            card_name: card_name.to_lowercase(),
+            search_results: search_results.clone(),
+            cached_at: time::OffsetDateTime::now_utc(),
+            last_accessed: time::OffsetDateTime::now_utc(),
+        };
+        
+        cache_guard.cache.insert(card_name.to_lowercase(), cached_result);
+        cache_guard.save_to_disk()?;
+        
+        debug!(
+            card_name = %card_name,
+            results_count = search_results.cards.len(),
+            "Search results cached to disk"
+        );
+    }
+    
+    Ok(search_results)
 }
 
 #[cfg(test)]
