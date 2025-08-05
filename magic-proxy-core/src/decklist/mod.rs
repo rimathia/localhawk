@@ -8,6 +8,7 @@ pub struct DecklistEntry {
     pub name: String,
     pub set: Option<String>,
     pub lang: Option<String>,
+    pub preferred_face: Option<crate::lookup::NameMatchMode>, // Track which face the user wanted
 }
 
 impl DecklistEntry {
@@ -17,6 +18,7 @@ impl DecklistEntry {
             name: name.to_string(),
             set: set.map(String::from),
             lang: lang.map(String::from),
+            preferred_face: None,
         }
     }
 
@@ -26,6 +28,7 @@ impl DecklistEntry {
             name: n.to_string(),
             set: None,
             lang: None,
+            preferred_face: None,
         }
     }
 
@@ -35,6 +38,7 @@ impl DecklistEntry {
             name: n.to_string(),
             set: None,
             lang: None,
+            preferred_face: None,
         }
     }
 }
@@ -81,7 +85,7 @@ fn parse_set_and_lang(group: Option<Match>, languages: &HashSet<String>, set_cod
 pub fn parse_line(line: &str, languages: &HashSet<String>, set_codes: &HashSet<String>) -> Option<DecklistEntry> {
     lazy_static! {
         static ref REMNS: Regex =
-            Regex::new(r"^\s*(\d*)\s*([^\(\[\$\t]*)[\s\(\[]*([\dA-Za-z]{2,3})?").unwrap();
+            Regex::new(r"^\s*(\d*)\s*([^\(\[\$\t]*)[\s\(\[]*([\dA-Za-z]{2,6})?").unwrap();
     }
 
     match REMNS.captures(line) {
@@ -90,6 +94,7 @@ pub fn parse_line(line: &str, languages: &HashSet<String>, set_codes: &HashSet<S
             let name = mns.get(2)?.as_str().trim().to_string();
             let set_or_lang = mns.get(3);
             let (set, lang) = parse_set_and_lang(set_or_lang, languages, set_codes);
+            log::debug!("Parsed decklist line '{}' -> name: '{}', set: {:?}, lang: {:?}", line.trim(), name, set, lang);
             let name_lowercase = name.to_lowercase();
             let non_entries = ["deck", "decklist", "sideboard"];
             if non_entries.iter().any(|s| **s == name_lowercase) {
@@ -100,6 +105,7 @@ pub fn parse_line(line: &str, languages: &HashSet<String>, set_codes: &HashSet<S
                     name,
                     set,
                     lang,
+                    preferred_face: None, // Will be set during name resolution
                 })
             }
         }
@@ -303,6 +309,48 @@ mod tests {
         let parsed = parse_decklist_default(decklist);
         for (left, right) in parsed.iter().zip(expected.iter()) {
             assert_eq!(left, right);
+        }
+    }
+
+    #[test]
+    fn test_various_set_codes_and_languages() {
+        // Test with actual set codes from cache and various languages
+        let mut set_codes = std::collections::HashSet::new();
+        set_codes.insert("bro".to_string());     // 3 chars - standard
+        set_codes.insert("plst".to_string());    // 4 chars - special product
+        set_codes.insert("pakh".to_string());    // 4 chars - promo
+        set_codes.insert("h2r".to_string());     // 3 chars with number
+        set_codes.insert("pmps08".to_string());  // 6 chars - long promo code
+        set_codes.insert("30a".to_string());     // 3 chars starting with number
+        
+        let languages = get_minimal_scryfall_languages();
+        
+        let test_cases = vec![
+            ("1 Lightning Bolt [BRO]", Some(DecklistEntry::new(1, "Lightning Bolt", Some("bro"), None))),
+            ("2 Cut // Ribbons [PLST]", Some(DecklistEntry::new(2, "Cut // Ribbons", Some("plst"), None))),
+            ("3 Kabira Takedown [PAKH]", Some(DecklistEntry::new(3, "Kabira Takedown", Some("pakh"), None))),
+            ("4 Memory Lapse [JA]", Some(DecklistEntry::new(4, "Memory Lapse", None, Some("ja")))),
+            ("1 Brainstorm [FR]", Some(DecklistEntry::new(1, "Brainstorm", None, Some("fr")))),
+            ("2 Giant Growth [DE]", Some(DecklistEntry::new(2, "Giant Growth", None, Some("de")))),
+            ("1 Black Lotus [H2R]", Some(DecklistEntry::new(1, "Black Lotus", Some("h2r"), None))),
+            ("3 Ancestral Recall [PMPS08]", Some(DecklistEntry::new(3, "Ancestral Recall", Some("pmps08"), None))),
+            ("1 Time Walk [30A]", Some(DecklistEntry::new(1, "Time Walk", Some("30a"), None))),
+            ("5 Counterspell", Some(DecklistEntry::new(5, "Counterspell", None, None))), // No set/lang
+        ];
+        
+        for (input, expected) in test_cases {
+            let result = parse_line(input, &languages, &set_codes);
+            match (&result, &expected) {
+                (Some(parsed), Some(exp)) => {
+                    assert_eq!(parsed.multiple, exp.multiple, "Multiple mismatch for: {}", input);
+                    assert_eq!(parsed.name, exp.name, "Name mismatch for: {}", input);
+                    assert_eq!(parsed.set, exp.set, "Set mismatch for: {}", input);
+                    assert_eq!(parsed.lang, exp.lang, "Language mismatch for: {}", input);
+                    assert_eq!(parsed.preferred_face, None, "Preferred face should be None for: {}", input);
+                },
+                (None, None) => {}, // Both None, test passes
+                _ => panic!("Mismatch for input '{}': got {:?}, expected {:?}", input, result, expected),
+            }
         }
     }
 }

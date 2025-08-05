@@ -22,7 +22,7 @@ pub use globals::{
     get_card_name_cache_info_ref,
 };
 pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};
-pub use pdf::{PageSize, PdfOptions, generate_pdf};
+pub use pdf::{PageSize, PdfOptions, DoubleFaceMode, generate_pdf};
 pub use scryfall::{
     Card, CardSearchResult, ScryfallCardNames, ScryfallClient,
     models::{get_minimal_scryfall_languages, ScryfallSetCodes},
@@ -89,14 +89,23 @@ impl ProxyGenerator {
         let mut resolved_entries = Vec::new();
         for line in parsed_lines {
             if let Some(mut entry) = line.as_entry() {
+                log::debug!("Processing entry: {}x '{}' [set: {:?}, lang: {:?}]", entry.multiple, entry.name, entry.set, entry.lang);
                 // Try to resolve the card name using global fuzzy matching
                 if let Some(lookup_result) = find_card_name(&entry.name) {
+                    log::debug!("Name resolution: '{}' -> '{}' (face mode: {:?})", entry.name, lookup_result.name, lookup_result.hit);
                     entry.name = lookup_result.name;
+                    entry.preferred_face = Some(lookup_result.hit); // Store which face was matched
+                } else {
+                    log::debug!("Name resolution: '{}' -> no match found", entry.name);
                 }
                 resolved_entries.push(entry);
             }
         }
 
+        log::debug!("Final resolved decklist: {} entries", resolved_entries.len());
+        for entry in &resolved_entries {
+            log::debug!("  -> {}x '{}' [set: {:?}, lang: {:?}, preferred_face: {:?}]", entry.multiple, entry.name, entry.set, entry.lang, entry.preferred_face);
+        }
         Ok(resolved_entries)
     }
 
@@ -146,14 +155,96 @@ impl ProxyGenerator {
             for _ in 0..*quantity {
                 progress_callback(current_progress, total_images);
 
-                // Get front image using global cache
-                let front_image = get_or_fetch_image(&card.border_crop).await?;
-                images.push(front_image);
+                match options.double_face_mode {
+                    DoubleFaceMode::FrontOnly => {
+                        // Always include front face
+                        let front_image = get_or_fetch_image(&card.border_crop).await?;
+                        images.push(front_image);
+                    }
+                    DoubleFaceMode::BackOnly => {
+                        // Include back face if it exists, otherwise front face
+                        if let Some(back_url) = &card.border_crop_back {
+                            let back_image = get_or_fetch_image(back_url).await?;
+                            images.push(back_image);
+                        } else {
+                            let front_image = get_or_fetch_image(&card.border_crop).await?;
+                            images.push(front_image);
+                        }
+                    }
+                    DoubleFaceMode::BothSides => {
+                        // Include front face
+                        let front_image = get_or_fetch_image(&card.border_crop).await?;
+                        images.push(front_image);
+                        
+                        // Include back face if it exists
+                        if let Some(back_url) = &card.border_crop_back {
+                            let back_image = get_or_fetch_image(back_url).await?;
+                            images.push(back_image);
+                        }
+                    }
+                }
 
-                // Get back image if it exists
-                if let Some(back_url) = &card.border_crop_back {
-                    let back_image = get_or_fetch_image(back_url).await?;
-                    images.push(back_image);
+                current_progress += 1;
+            }
+        }
+
+        progress_callback(total_images, total_images);
+
+        // Generate PDF
+        generate_pdf(images.into_iter(), options)
+    }
+
+    /// Generate PDF from a list of cards with per-card face mode (static method using global state)
+    pub async fn generate_pdf_from_cards_with_face_modes<F>(
+        cards: &[(Card, u32, DoubleFaceMode)],
+        options: PdfOptions,
+        mut progress_callback: F,
+    ) -> Result<Vec<u8>, ProxyError>
+    where
+        F: FnMut(usize, usize) + Send,
+    {
+        if cards.is_empty() {
+            return Err(ProxyError::InvalidCard("No cards to generate".to_string()));
+        }
+
+        // Calculate total images needed
+        let total_images: usize = cards.iter().map(|(_, qty, _)| *qty as usize).sum();
+        let mut current_progress = 0;
+
+        // Collect all images
+        let mut images = Vec::new();
+
+        for (card, quantity, face_mode) in cards {
+            for _ in 0..*quantity {
+                progress_callback(current_progress, total_images);
+
+                match face_mode {
+                    DoubleFaceMode::FrontOnly => {
+                        // Always include front face
+                        let front_image = get_or_fetch_image(&card.border_crop).await?;
+                        images.push(front_image);
+                    }
+                    DoubleFaceMode::BackOnly => {
+                        // Include back face if it exists, otherwise front face
+                        if let Some(back_url) = &card.border_crop_back {
+                            let back_image = get_or_fetch_image(back_url).await?;
+                            images.push(back_image);
+                        } else {
+                            let front_image = get_or_fetch_image(&card.border_crop).await?;
+                            images.push(front_image);
+                        }
+                    }
+                    DoubleFaceMode::BothSides => {
+                        // Include front face
+                        let front_image = get_or_fetch_image(&card.border_crop).await?;
+                        images.push(front_image);
+                        
+                        // Include back face if it exists
+                        if let Some(back_url) = &card.border_crop_back {
+                            let back_image = get_or_fetch_image(back_url).await?;
+                            images.push(back_image);
+                        }
+                    }
                 }
 
                 current_progress += 1;

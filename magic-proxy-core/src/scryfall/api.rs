@@ -35,18 +35,30 @@ impl ScryfallClient {
     pub async fn search_card(&self, name: &str) -> Result<CardSearchResult, ProxyError> {
         let encoded_name = encode_card_name(name);
         let uri = format!(
-            "https://api.scryfall.com/cards/search?q=name=\"{}\"&unique=prints",
-            encoded_name
+            "https://api.scryfall.com/cards/search?q=name:\"{}\"+OR+name=\"{}\"&unique=prints",
+            encoded_name, encoded_name
         );
         
+        log::debug!("Searching Scryfall with URI: {}", uri);
         let response = self.call(&uri).await?;
         
         match response.json::<ScryfallSearchAnswer>().await {
             Ok(answer) => {
                 let mut cards = Vec::new();
+                let search_name_lower = name.to_lowercase();
+                
                 for card_data in answer.data {
                     match Card::from_scryfall_object(&card_data) {
-                        Ok(card) => cards.push(card),
+                        Ok(card) => {
+                            // Filter results to only include cards that exactly match our search name
+                            let card_name_lower = card.name.to_lowercase();
+                            if card_name_lower == search_name_lower {
+                                log::debug!("Adding exact match: '{}' ({})", card.name, card.set);
+                                cards.push(card);
+                            } else {
+                                log::debug!("Skipping non-exact match: '{}' != '{}'", card.name, name);
+                            }
+                        }
                         Err(e) => {
                             info!("Skipping invalid card: {}", e);
                             continue;
@@ -54,8 +66,10 @@ impl ScryfallClient {
                     }
                 }
                 
+                log::debug!("Filtered {} cards from {} total results", cards.len(), answer.total_cards);
+                
                 Ok(CardSearchResult {
-                    total_found: answer.total_cards as usize,
+                    total_found: cards.len(), // Use filtered count, not original total
                     cards,
                 })
             }
@@ -68,5 +82,17 @@ impl ScryfallClient {
 }
 
 fn encode_card_name(name: &str) -> String {
-    name.replace(' ', "+").replace("//", "")
+    // Proper URL encoding for card names
+    // Handle spaces, slashes, and other special characters
+    name.chars()
+        .map(|c| match c {
+            ' ' => "+".to_string(),
+            '/' => "%2F".to_string(),
+            '"' => "%22".to_string(),
+            '\'' => "%27".to_string(),
+            '&' => "%26".to_string(),
+            c if c.is_ascii_alphanumeric() || c == '-' || c == '_' => c.to_string(),
+            c => format!("%{:02X}", c as u8),
+        })
+        .collect()
 }

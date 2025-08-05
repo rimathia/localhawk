@@ -1,6 +1,9 @@
-use iced::widget::{button, column, container, row, scrollable, text, text_editor};
+use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_editor};
 use iced::{Element, Length, Task};
-use magic_proxy_core::{DecklistEntry, ProxyGenerator, PdfOptions, force_update_card_lookup, get_card_name_cache_info};
+use magic_proxy_core::{
+    DecklistEntry, DoubleFaceMode, NameMatchMode, PdfOptions, ProxyGenerator,
+    force_update_card_lookup, get_card_name_cache_info,
+};
 use rfd::AsyncFileDialog;
 
 #[derive(Debug, Clone)]
@@ -15,6 +18,7 @@ pub enum Message {
     FileSaved(Option<String>),
     ForceUpdateCardNames,
     CardNamesUpdated(Result<String, String>),
+    DoubleFaceModeChanged(DoubleFaceMode),
 }
 
 pub struct AppState {
@@ -26,6 +30,7 @@ pub struct AppState {
     is_generating_pdf: bool,
     generated_pdf: Option<Vec<u8>>,
     is_updating_card_names: bool,
+    double_face_mode: DoubleFaceMode,
 }
 
 impl AppState {
@@ -33,7 +38,7 @@ impl AppState {
         Self {
             display_text: "Welcome to Magic Card Proxy Generator!\nParsing includes fuzzy matching, set/language awareness, and card name resolution.".to_string(),
             decklist_content: text_editor::Content::with_text(
-                "4 Lightning Bolt\n1 Black Lotus [VMA]\n2 Counterspell [7ED]\n3 Giant Growth\n1 Memory Lapse [ja]",
+                "2 Black Lotus [VMA]\n1 Counterspell [7ED]\n1 Memory Lapse [ja]\n1 kabira takedown\n1 kabira plateau\n1 cut // ribbons (pakh)",
             ),
             parsed_cards: Vec::new(),
             is_parsing: false,
@@ -41,6 +46,7 @@ impl AppState {
             is_generating_pdf: false,
             generated_pdf: None,
             is_updating_card_names: false,
+            double_face_mode: DoubleFaceMode::BothSides,
         }
     }
 }
@@ -80,10 +86,20 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::DecklistParsed(cards) => {
             state.is_parsing = false;
+            log::debug!("GUI received parsed cards: {}", cards.len());
+            for card in &cards {
+                log::debug!(
+                    "  GUI card: {}x '{}' [set: {:?}, lang: {:?}, preferred_face: {:?}]",
+                    card.multiple,
+                    card.name,
+                    card.set,
+                    card.lang,
+                    card.preferred_face
+                );
+            }
             state.parsed_cards = cards;
             state.error_message = None;
             state.display_text = format!("Parsed {} cards successfully!", state.parsed_cards.len());
-            
         }
         Message::ClearDecklist => {
             state.decklist_content = text_editor::Content::new();
@@ -102,44 +118,116 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             state.generated_pdf = None;
 
             let cards = state.parsed_cards.clone();
+            let double_face_mode = state.double_face_mode.clone();
             return Task::perform(
                 async move {
                     // Build card list for PDF generation
                     let mut card_list = Vec::new();
-                    
+
                     for entry in cards {
+                        log::debug!("Searching for card: '{}'", entry.name);
                         match ProxyGenerator::search_card(&entry.name).await {
                             Ok(search_result) => {
+                                log::debug!(
+                                    "Found {} printings for '{}':",
+                                    search_result.cards.len(),
+                                    entry.name
+                                );
+                                for (i, card) in search_result.cards.iter().enumerate() {
+                                    log::debug!(
+                                        "  [{}] '{}' ({}) [{}]",
+                                        i,
+                                        card.name,
+                                        card.set.to_uppercase(),
+                                        card.language
+                                    );
+                                }
                                 if let Some(card) = search_result.cards.into_iter().find(|c| {
+                                    // First check if the card name matches what we're looking for
+                                    let name_matches =
+                                        c.name.to_lowercase() == entry.name.to_lowercase();
+
                                     // Try to match both set and language if specified
                                     let set_matches = if let Some(ref entry_set) = entry.set {
                                         c.set.to_lowercase() == entry_set.to_lowercase()
                                     } else {
                                         true // No set filter
                                     };
-                                    
+
                                     let lang_matches = if let Some(ref entry_lang) = entry.lang {
                                         c.language.to_lowercase() == entry_lang.to_lowercase()
                                     } else {
                                         true // No language filter
                                     };
-                                    
-                                    set_matches && lang_matches
+
+                                    name_matches && set_matches && lang_matches
                                 }) {
-                                    card_list.push((card, entry.multiple as u32));
+                                    log::debug!(
+                                        "Selected card: '{}' ({}) [{}]",
+                                        card.name,
+                                        card.set.to_uppercase(),
+                                        card.language
+                                    );
+                                    // Use per-card face preference if available
+                                    log::debug!(
+                                        "Entry details: '{}' [set: {:?}, lang: {:?}, preferred_face: {:?}]",
+                                        entry.name,
+                                        entry.set,
+                                        entry.lang,
+                                        entry.preferred_face
+                                    );
+                                    let face_mode = match entry.preferred_face {
+                                        Some(NameMatchMode::Part(0)) => {
+                                            log::debug!(
+                                                "Card '{}' matched front face (Part 0), using global setting: {:?}",
+                                                entry.name,
+                                                double_face_mode
+                                            );
+                                            double_face_mode.clone() // Front face: use global setting
+                                        }
+                                        Some(NameMatchMode::Part(1)) => {
+                                            log::debug!(
+                                                "Card '{}' matched back face (Part 1), always using BackOnly",
+                                                entry.name
+                                            );
+                                            DoubleFaceMode::BackOnly // Back face: always back only
+                                        }
+                                        _ => {
+                                            log::debug!(
+                                                "Card '{}' matched full name or no preference (mode: {:?}), using global setting: {:?}",
+                                                entry.name,
+                                                entry.preferred_face,
+                                                double_face_mode
+                                            );
+                                            double_face_mode.clone() // Full match or no preference: use global setting
+                                        }
+                                    };
+
+                                    card_list.push((card, entry.multiple as u32, face_mode));
                                 }
                             }
-                            Err(_) => {
+                            Err(e) => {
+                                log::debug!("Failed to search for card '{}': {:?}", entry.name, e);
                                 // Skip cards that can't be found
                                 continue;
                             }
                         }
                     }
 
-                    // Generate PDF using the new static method
-                    match ProxyGenerator::generate_pdf_from_cards(&card_list, PdfOptions::default(), |_current, _total| {
-                        // No progress reporting for now
-                    }).await {
+                    // Generate PDF using the selected double face mode
+                    let pdf_options = PdfOptions {
+                        double_face_mode: double_face_mode,
+                        ..PdfOptions::default()
+                    };
+                    match ProxyGenerator::generate_pdf_from_cards_with_face_modes(
+                        &card_list,
+                        pdf_options,
+                        |_current, _total| {
+                            // No progress reporting for now
+                        },
+                    )
+                    .await
+                    {
                         Ok(pdf_data) => Ok(pdf_data),
                         Err(e) => Err(format!("PDF generation failed: {}", e)),
                     }
@@ -149,12 +237,12 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::PdfGenerated(result) => {
             state.is_generating_pdf = false;
-            
+
             match result {
                 Ok(pdf_data) => {
                     state.generated_pdf = Some(pdf_data.clone());
-                    state.display_text = format!("PDF generated successfully! {} bytes", pdf_data.len());
-                    
+                    state.display_text =
+                        format!("PDF generated successfully! {} bytes", pdf_data.len());
                 }
                 Err(error) => {
                     state.error_message = Some(error);
@@ -213,11 +301,17 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                         Ok(_) => {
                             // Get cache info after update
                             if let Some((timestamp, count)) = get_card_name_cache_info() {
-                                Ok(format!("Updated {} card names at {}", count, timestamp.format(&time::format_description::well_known::Rfc3339).unwrap_or_else(|_| "unknown time".to_string())))
+                                Ok(format!(
+                                    "Updated {} card names at {}",
+                                    count,
+                                    timestamp
+                                        .format(&time::format_description::well_known::Rfc3339)
+                                        .unwrap_or_else(|_| "unknown time".to_string())
+                                ))
                             } else {
                                 Ok("Updated card names successfully".to_string())
                             }
-                        },
+                        }
                         Err(e) => Err(format!("Failed to update card names: {}", e)),
                     }
                 },
@@ -226,18 +320,20 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
         }
         Message::CardNamesUpdated(result) => {
             state.is_updating_card_names = false;
-            
+
             match result {
                 Ok(_) => {
                     state.display_text = "Card names updated successfully!".to_string();
                     state.error_message = None;
-                    
                 }
                 Err(error) => {
                     state.error_message = Some(error);
                     state.display_text = "Card name update failed!".to_string();
                 }
             }
+        }
+        Message::DoubleFaceModeChanged(mode) => {
+            state.double_face_mode = mode;
         }
     }
     Task::none()
@@ -317,6 +413,16 @@ pub fn view(state: &AppState) -> Element<Message> {
                 .padding(10),
             ]
             .spacing(10),
+            row![
+                text("Double-faced cards:").size(14),
+                pick_list(
+                    DoubleFaceMode::all(),
+                    Some(state.double_face_mode.clone()),
+                    Message::DoubleFaceModeChanged,
+                )
+                .width(Length::Fixed(150.0)),
+            ]
+            .spacing(10),
             cards_list,
         ]
         .spacing(10)
@@ -325,17 +431,12 @@ pub fn view(state: &AppState) -> Element<Message> {
     };
 
     let pdf_status_section = if state.is_generating_pdf {
-        column![
-            text("Generating PDF...").size(16),
-        ]
-        .spacing(5)
+        column![text("Generating PDF...").size(16),].spacing(5)
     } else if let Some(pdf_data) = &state.generated_pdf {
         column![
             row![
                 text("PDF Ready!").size(16),
-                button("Save PDF")
-                    .on_press(Message::SavePdf)
-                    .padding(10),
+                button("Save PDF").on_press(Message::SavePdf).padding(10),
             ]
             .spacing(10),
             text(format!("Size: {} KB", pdf_data.len() / 1024)).size(14),
@@ -369,15 +470,19 @@ pub fn view(state: &AppState) -> Element<Message> {
             .padding(10),
         ]
         .spacing(10),
-        text(get_card_name_cache_info()
-            .map(|(timestamp, count)| {
-                format!("Cache: {} cards, last updated: {}", 
-                    count, 
-                    timestamp.format(&time::format_description::well_known::Rfc3339)
-                        .unwrap_or_else(|_| "Unknown".to_string())
-                )
-            })
-            .unwrap_or_else(|| "No cache found".to_string()))
+        text(
+            get_card_name_cache_info()
+                .map(|(timestamp, count)| {
+                    format!(
+                        "Cache: {} cards, last updated: {}",
+                        count,
+                        timestamp
+                            .format(&time::format_description::well_known::Rfc3339)
+                            .unwrap_or_else(|_| "Unknown".to_string())
+                    )
+                })
+                .unwrap_or_else(|| "No cache found".to_string())
+        )
         .size(12),
     ]
     .spacing(5);

@@ -22,6 +22,37 @@ pub struct PdfOptions {
     pub cards_per_row: u32,
     pub cards_per_column: u32,
     pub margin: f32,
+    pub double_face_mode: DoubleFaceMode,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DoubleFaceMode {
+    /// Include only the front face of double-faced cards
+    FrontOnly,
+    /// Include only the back face of double-faced cards  
+    BackOnly,
+    /// Include both front and back faces as separate cards
+    BothSides,
+}
+
+impl std::fmt::Display for DoubleFaceMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DoubleFaceMode::FrontOnly => write!(f, "Front face only"),
+            DoubleFaceMode::BackOnly => write!(f, "Back face only"),
+            DoubleFaceMode::BothSides => write!(f, "Both sides"),
+        }
+    }
+}
+
+impl DoubleFaceMode {
+    pub fn all() -> Vec<DoubleFaceMode> {
+        vec![
+            DoubleFaceMode::FrontOnly,
+            DoubleFaceMode::BackOnly,
+            DoubleFaceMode::BothSides,
+        ]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -38,6 +69,7 @@ impl Default for PdfOptions {
             cards_per_row: 3,
             cards_per_column: 3,
             margin: 3.0,
+            double_face_mode: DoubleFaceMode::BothSides, // Keep current behavior as default
         }
     }
 }

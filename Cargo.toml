@@ -5,7 +5,6 @@ members = [
     "magic-proxy-cli"
 ]
 resolver = "2"
-edition = "2024"
 
 [workspace.dependencies]
 # Shared dependencies with consistent versions

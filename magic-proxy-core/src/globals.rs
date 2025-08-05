@@ -325,10 +325,10 @@ pub async fn get_or_fetch_search_results(card_name: &str) -> Result<crate::scryf
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_initialize_caches() {
+    #[tokio::test]
+    async fn test_initialize_caches() {
         // Should not panic and should return Ok
-        let result = initialize_caches();
+        let result = initialize_caches().await;
         assert!(result.is_ok());
         
         // Cache should be initialized and accessible
