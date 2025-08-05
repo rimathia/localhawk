@@ -142,5 +142,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // Save caches before exiting
+    if let Err(e) = magic_proxy_core::shutdown_caches().await {
+        eprintln!("Warning: Failed to save caches on shutdown: {}", e);
+    }
+
     Ok(())
 }

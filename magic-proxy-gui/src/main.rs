@@ -23,6 +23,14 @@ fn main() -> iced::Result {
         std::process::exit(1);
     }
     
-    iced::application("Magic Card Proxy Generator", app::update, app::view)
-        .run_with(app::initialize)
+    // Run the GUI application
+    let result = iced::application("Magic Card Proxy Generator", app::update, app::view)
+        .run_with(app::initialize);
+    
+    // Application has exited (user closed window), save caches before returning
+    if let Err(e) = rt.block_on(magic_proxy_core::shutdown_caches()) {
+        eprintln!("Warning: Failed to save caches on shutdown: {}", e);
+    }
+    
+    result
 }
