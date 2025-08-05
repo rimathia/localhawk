@@ -141,6 +141,10 @@ impl SetCodesCache {
     pub fn get_cache_path(&self) -> &PathBuf {
         &self.cache_file_path
     }
+    
+    pub fn save_current_data_to_disk(&self, set_codes: &ScryfallSetCodes) -> Result<(), ProxyError> {
+        self.save_to_cache(set_codes)
+    }
 }
 
 impl Default for SetCodesCache {

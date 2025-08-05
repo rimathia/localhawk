@@ -66,6 +66,34 @@ pub async fn initialize_caches() -> Result<(), ProxyError> {
     Ok(())
 }
 
+// Shutdown function - save all caches to disk
+pub async fn shutdown_caches() -> Result<(), ProxyError> {
+    info!("Saving all caches to disk before shutdown");
+    
+    // Save image cache metadata
+    {
+        let image_cache = get_image_cache();
+        let cache_guard = image_cache.read().unwrap();
+        cache_guard.save_to_disk()?;
+        info!("Image cache metadata saved to disk");
+    }
+    
+    // Save search results cache
+    {
+        let search_cache = get_search_results_cache();
+        let cache_guard = search_cache.read().unwrap();
+        cache_guard.save_to_disk()?;
+        info!("Search results cache saved to disk");
+    }
+    
+    // Card names and set codes caches save immediately when updated from API
+    // (no need to save at shutdown - they only change when force-updated)
+    
+    info!("All caches saved to disk successfully");
+    Ok(())
+}
+
+
 // Convenience functions - these now only check if already initialized
 pub async fn ensure_card_lookup_initialized() -> Result<(), ProxyError> {
     let lookup_ref = get_card_lookup();
@@ -281,7 +309,7 @@ pub async fn get_or_fetch_search_results(card_name: &str) -> Result<crate::scryf
         };
         
         cache_guard.cache.insert(card_name.to_lowercase(), cached_result);
-        cache_guard.save_to_disk()?;
+        // Cache will be saved to disk at shutdown
         
         debug!(
             card_name = %card_name,

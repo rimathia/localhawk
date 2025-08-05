@@ -111,8 +111,7 @@ impl ImageCache {
             },
         );
         
-        // Update disk metadata
-        self.save_metadata_to_disk()?;
+        // Metadata will be saved to disk at shutdown
         
         debug!(url = %url, filename = %filename, cache_dir = %self.cache_dir.display(), "Image cached to disk");
         Ok(())
@@ -131,6 +130,7 @@ impl ImageCache {
         }
         
         self.cache.clear();
+        // Clear metadata on disk immediately for clear operation
         self.save_metadata_to_disk()?;
         info!("Cleared all cached images");
         Ok(())
@@ -144,7 +144,7 @@ impl ImageCache {
                 fs::remove_file(&file_path)
                     .map_err(|e| ProxyError::Io(e))?;
             }
-            self.save_metadata_to_disk()?;
+            // Metadata will be saved to disk at shutdown
             debug!(url = %url, "Force evicted image from cache");
         }
         Ok(())
@@ -160,6 +160,10 @@ impl ImageCache {
 
     pub fn contains(&self, url: &str) -> bool {
         self.cache.contains_key(url)
+    }
+    
+    pub fn save_to_disk(&self) -> Result<(), ProxyError> {
+        self.save_metadata_to_disk()
     }
     
     fn url_to_filename(&self, url: &str) -> String {

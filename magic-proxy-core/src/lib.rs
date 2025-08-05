@@ -18,7 +18,7 @@ pub use error::ProxyError;
 pub use globals::{
     find_card_name, force_update_card_lookup, force_update_set_codes,
     get_card_name_cache_info, get_image_cache, get_or_fetch_image, get_or_fetch_search_results,
-    get_scryfall_client, initialize_caches, get_card_lookup, get_set_codes_cache,
+    get_scryfall_client, initialize_caches, shutdown_caches, get_card_lookup, get_set_codes_cache,
     get_card_name_cache_info_ref,
 };
 pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};

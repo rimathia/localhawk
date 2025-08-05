@@ -80,7 +80,7 @@ impl SearchResultsCache {
         };
         
         self.cache.insert(normalized_name, cached_result);
-        self.save_to_disk()?;
+        // Cache will be saved to disk at shutdown
         
         debug!(
             card_name = %card_name,
@@ -95,7 +95,7 @@ impl SearchResultsCache {
     pub fn force_evict(&mut self, card_name: &str) -> Result<(), ProxyError> {
         let normalized_name = card_name.to_lowercase();
         if self.cache.remove(&normalized_name).is_some() {
-            self.save_to_disk()?;
+            // Cache will be saved to disk at shutdown
             debug!(card_name = %card_name, "Force evicted search results from cache");
         }
         Ok(())
@@ -103,6 +103,7 @@ impl SearchResultsCache {
     
     pub fn clear_cache(&mut self) -> Result<(), ProxyError> {
         self.cache.clear();
+        // Clear cache on disk immediately for clear operation
         self.save_to_disk()?;
         info!("Cleared all cached search results");
         Ok(())

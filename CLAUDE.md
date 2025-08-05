@@ -94,6 +94,93 @@ pub struct MinimalScryfallObject {
 - Each card scaled to maintain aspect ratio
 - Supports multiple pages for large card lists
 
+## Cache System
+
+The application uses a sophisticated multi-layered caching system optimized for performance and reliability:
+
+### Cache Types and Strategies
+
+#### 1. Image Cache (`ImageCache`)
+- **Purpose**: Stores downloaded card images to avoid repeated network requests
+- **Location**: `~/.cache/magic-proxy/` (platform-specific cache directory)
+- **Format**: JPEG files with SHA256-hashed filenames + JSON metadata
+- **Size Limit**: 1 GB by default (`DEFAULT_MAX_SIZE_MB = 1000`)
+- **Eviction**: LRU (Least Recently Used) when cache exceeds size limit
+- **Persistence Strategy**: 
+  - **Runtime**: Pure in-memory operations (no disk I/O)
+  - **Startup**: Load metadata and existing images from disk
+  - **Shutdown**: Save metadata to disk via `shutdown_caches()`
+  - **Clear**: Immediate disk cleanup when explicitly cleared
+
+#### 2. Search Results Cache (`SearchResultsCache`)
+- **Purpose**: Cache Scryfall API search responses to reduce API calls
+- **Location**: `~/.cache/magic-proxy/search_results.json`
+- **Validity**: Permanent (search results don't change for card names)
+- **Access Tracking**: Updates `last_accessed` timestamp for each cached search
+- **Persistence Strategy**:
+  - **Runtime**: Pure in-memory operations
+  - **Startup**: Load all cached searches from disk
+  - **Shutdown**: Save all new searches to disk via `shutdown_caches()`
+
+#### 3. Card Names Cache (`CardNameCache`)
+- **Purpose**: Stores complete Scryfall card names catalog for fuzzy matching
+- **Location**: `~/.cache/magic-proxy/card_names.json`
+- **Validity**: 1 day (`CACHE_DURATION_DAYS = 1`)
+- **Data**: ~32,000+ card names with timestamp
+- **Persistence Strategy**:
+  - **Startup**: Check if cache is < 1 day old, fetch from API if expired
+  - **Runtime**: Pure in-memory fuzzy matching
+  - **Force Update**: Immediate save to disk when user requests refresh
+  - **Automatic Expiration**: Next startup will fetch fresh data if > 1 day old
+
+#### 4. Set Codes Cache (`SetCodesCache`)
+- **Purpose**: Stores all Magic set codes for decklist parsing
+- **Location**: `~/.cache/magic-proxy/set_codes.json`
+- **Validity**: 1 day (`CACHE_DURATION_DAYS = 1`) - matches card names for consistency
+- **Data**: ~1,000 set codes (e.g., "lea", "leb", "2ed", etc.)
+- **Persistence Strategy**: Same as Card Names Cache
+
+### Global Singleton Pattern
+
+All caches use thread-safe global singletons via `OnceLock<Arc<RwLock<T>>>`:
+
+```rust
+static CARD_LOOKUP: OnceLock<Arc<RwLock<Option<CardNameLookup>>>> = OnceLock::new();
+static IMAGE_CACHE: OnceLock<Arc<RwLock<ImageCache>>> = OnceLock::new();
+static SEARCH_RESULTS_CACHE: OnceLock<Arc<RwLock<SearchResultsCache>>> = OnceLock::new();
+static SET_CODES_CACHE: OnceLock<Arc<RwLock<Option<HashSet<String>>>>> = OnceLock::new();
+```
+
+### Cache Initialization and Shutdown
+
+#### Startup (`initialize_caches()`)
+- Must be called at application startup (both GUI and CLI)
+- Loads all disk caches into memory
+- Checks validity for card names and set codes (1-day expiration)
+- Builds fuzzy matching index (~450ms for 32K+ card names)
+- Creates tokio runtime for async operations in GUI
+
+#### Shutdown (`shutdown_caches()`)
+- Call before application exit to persist changes
+- Saves image cache metadata and search results to disk
+- Card names and set codes already saved when updated
+- Ensures no data loss on clean exit
+
+### Performance Characteristics
+
+- **Startup**: One-time disk reads and network requests (if expired)
+- **Runtime**: Pure in-memory operations, no disk I/O or blocking
+- **Memory Usage**: ~50-100MB for all caches combined
+- **Network**: Only on cache misses or expiration
+- **Disk**: Only on startup, shutdown, and explicit operations
+
+### Error Handling
+
+- **Disk Errors**: Graceful degradation, cache operates in memory-only mode
+- **Network Errors**: Falls back to existing cache when possible
+- **Corruption**: Invalid cache files are ignored, fresh data fetched
+- **Thread Safety**: All operations are thread-safe via RwLock
+
 ## Project Structure
 
 This is a Rust workspace with multiple crates:
