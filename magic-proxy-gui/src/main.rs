@@ -16,7 +16,9 @@ fn main() -> iced::Result {
     init_logging();
     
     // Initialize caches at startup
-    if let Err(e) = magic_proxy_core::initialize_caches() {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    
+    if let Err(e) = rt.block_on(magic_proxy_core::initialize_caches()) {
         eprintln!("Failed to initialize caches: {}", e);
         std::process::exit(1);
     }

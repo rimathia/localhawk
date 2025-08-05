@@ -13,6 +13,7 @@ static IMAGE_CACHE: OnceLock<Arc<RwLock<ImageCache>>> = OnceLock::new();
 static CARD_LOOKUP: OnceLock<Arc<RwLock<Option<CardNameLookup>>>> = OnceLock::new();
 static SEARCH_RESULTS_CACHE: OnceLock<Arc<RwLock<SearchResultsCache>>> = OnceLock::new();
 static SET_CODES_CACHE: OnceLock<Arc<RwLock<Option<HashSet<String>>>>> = OnceLock::new();
+static CARD_NAME_CACHE_INFO: OnceLock<Arc<RwLock<Option<(time::OffsetDateTime, usize)>>>> = OnceLock::new();
 
 pub fn get_scryfall_client() -> &'static ScryfallClient {
     SCRYFALL_CLIENT.get_or_init(|| ScryfallClient::new().expect("Failed to create ScryfallClient"))
@@ -42,8 +43,12 @@ pub fn get_set_codes_cache() -> &'static Arc<RwLock<Option<HashSet<String>>>> {
     SET_CODES_CACHE.get_or_init(|| Arc::new(RwLock::new(None)))
 }
 
+pub fn get_card_name_cache_info_ref() -> &'static Arc<RwLock<Option<(time::OffsetDateTime, usize)>>> {
+    CARD_NAME_CACHE_INFO.get_or_init(|| Arc::new(RwLock::new(None)))
+}
+
 // Eager initialization function - call at application startup
-pub fn initialize_caches() -> Result<(), ProxyError> {
+pub async fn initialize_caches() -> Result<(), ProxyError> {
     // Initialize image cache (loads from disk)
     let _image_cache = get_image_cache();
     info!("Image cache initialized at startup");
@@ -52,10 +57,16 @@ pub fn initialize_caches() -> Result<(), ProxyError> {
     let _search_cache = get_search_results_cache();
     info!("Search results cache initialized at startup");
     
+    // Initialize card name lookup from disk at startup
+    ensure_card_lookup_initialized().await?;
+    
+    // Initialize set codes from disk at startup
+    ensure_set_codes_initialized().await?;
+    
     Ok(())
 }
 
-// Convenience functions
+// Convenience functions - these now only check if already initialized
 pub async fn ensure_card_lookup_initialized() -> Result<(), ProxyError> {
     let lookup_ref = get_card_lookup();
     let needs_init = {
@@ -86,8 +97,11 @@ pub async fn ensure_card_lookup_initialized() -> Result<(), ProxyError> {
 
         let mut lookup_guard = lookup_ref.write().unwrap();
         *lookup_guard = Some(lookup);
-    } else {
-        debug!("CardNameLookup already initialized");
+        
+        // Store cache info in memory to avoid disk reads on every GUI frame
+        let cache_info_ref = get_card_name_cache_info_ref();
+        let mut cache_info_guard = cache_info_ref.write().unwrap();
+        *cache_info_guard = card_names.date.map(|date| (date, card_names.names.len()));
     }
 
     Ok(())
@@ -117,6 +131,11 @@ pub async fn force_update_card_lookup() -> Result<(), ProxyError> {
     let lookup_ref = get_card_lookup();
     let mut lookup_guard = lookup_ref.write().unwrap();
     *lookup_guard = Some(lookup);
+
+    // Update cache info in memory
+    let cache_info_ref = get_card_name_cache_info_ref();
+    let mut cache_info_guard = cache_info_ref.write().unwrap();
+    *cache_info_guard = card_names.date.map(|date| (date, card_names.names.len()));
 
     Ok(())
 }
@@ -222,10 +241,9 @@ pub async fn get_or_fetch_image(url: &str) -> Result<DynamicImage, ProxyError> {
 }
 
 pub fn get_card_name_cache_info() -> Option<(time::OffsetDateTime, usize)> {
-    match CardNameCache::new() {
-        Ok(cache) => cache.get_cache_info(),
-        Err(_) => None,
-    }
+    let cache_info_ref = get_card_name_cache_info_ref();
+    let cache_info_guard = cache_info_ref.read().unwrap();
+    cache_info_guard.clone()
 }
 
 pub async fn get_or_fetch_search_results(card_name: &str) -> Result<crate::scryfall::CardSearchResult, ProxyError> {

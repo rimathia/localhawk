@@ -16,10 +16,10 @@ pub use set_codes_cache::SetCodesCache;
 pub use decklist::{DecklistEntry, ParsedDecklistLine, parse_decklist, parse_line};
 pub use error::ProxyError;
 pub use globals::{
-    ensure_card_lookup_initialized, find_card_name, force_update_card_lookup,
-    ensure_set_codes_initialized, force_update_set_codes,
+    find_card_name, force_update_card_lookup, force_update_set_codes,
     get_card_name_cache_info, get_image_cache, get_or_fetch_image, get_or_fetch_search_results,
-    get_scryfall_client, initialize_caches,
+    get_scryfall_client, initialize_caches, get_card_lookup, get_set_codes_cache,
+    get_card_name_cache_info_ref,
 };
 pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};
 pub use pdf::{PageSize, PdfOptions, generate_pdf};
@@ -47,7 +47,8 @@ impl ProxyGenerator {
 
     /// Get all card names from Scryfall and initialize fuzzy matching (now uses global state)
     pub async fn initialize_card_lookup() -> Result<(), ProxyError> {
-        ensure_card_lookup_initialized().await
+        // This is now handled by initialize_caches() at startup
+        Ok(())
     }
 
     /// Force update card names from Scryfall and reinitialize fuzzy matching (now uses global state)
@@ -66,9 +67,13 @@ impl ProxyGenerator {
     ) -> Result<Vec<DecklistEntry>, ProxyError> {
         use scryfall::models::get_minimal_scryfall_languages;
 
-        // Ensure global card lookup and set codes are initialized
-        ensure_card_lookup_initialized().await?;
-        ensure_set_codes_initialized().await?;
+        // These should already be initialized at startup, just verify
+        if get_card_lookup().read().unwrap().is_none() {
+            return Err(ProxyError::Cache("Card lookup not initialized - call initialize_caches() at startup".to_string()));
+        }
+        if get_set_codes_cache().read().unwrap().is_none() {
+            return Err(ProxyError::Cache("Set codes not initialized - call initialize_caches() at startup".to_string()));
+        }
 
         let languages = get_minimal_scryfall_languages();
         

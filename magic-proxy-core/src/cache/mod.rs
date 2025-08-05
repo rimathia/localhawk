@@ -40,7 +40,7 @@ pub struct ImageCache {
 }
 
 const MAGIC_CARD_SIZE_ESTIMATE: u64 = 956 * 1024; // 480x680 pixels * 3 bytes ≈ 956 KB
-const DEFAULT_MAX_SIZE_MB: u64 = 100;
+const DEFAULT_MAX_SIZE_MB: u64 = 1000;
 const METADATA_FILENAME: &str = "cache_metadata.json";
 
 impl ImageCache {
