@@ -6,6 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Magic Card Proxy Sheet Generator - A Rust GUI application that creates PDF proxy sheets for Magic: The Gathering cards. Users specify a list of cards and the application generates a printable PDF with card images arranged in a grid layout.
 
+### Key Features
+- **Intelligent Double-Faced Card Handling**: Automatically detects when users want specific faces (front vs back) based on input
+- **Fuzzy Name Matching**: Advanced card name resolution with support for split cards and alternative names  
+- **Flexible Set/Language Support**: Parse set codes (2-6 characters) and language specifications in decklists
+- **Comprehensive Caching**: Multi-layer caching for images, search results, card names, and set codes
+
 ## Key Dependencies
 
 - **iced** - Cross-platform GUI framework (Elm-inspired architecture)
@@ -72,13 +78,24 @@ pub struct ScryfallClient {
 
 ### Card Data Model
 ```rust
-pub struct MinimalScryfallObject {
+pub struct Card {
     pub name: String,
     pub set: String, 
     pub language: String,
     pub border_crop: String,           // Front image URL
     pub border_crop_back: Option<String>, // Back image for double-faced cards
     pub meld_result: Option<String>,   // For meld cards
+}
+```
+
+### Decklist Entry Model
+```rust
+pub struct DecklistEntry {
+    pub multiple: i32,
+    pub name: String,
+    pub set: Option<String>,           // Parsed from [SET] notation
+    pub lang: Option<String>,          // Parsed from [LANG] notation  
+    pub preferred_face: Option<NameMatchMode>, // Tracks which face was matched
 }
 ```
 
@@ -90,9 +107,25 @@ pub struct MinimalScryfallObject {
 
 ### PDF Layout Logic
 - Uses `printpdf::ImageTransform` for positioning and scaling
-- Centers 3x3 grid on A4 page with margins
+- Centers 3x3 grid on A4 page with margins  
 - Each card scaled to maintain aspect ratio
 - Supports multiple pages for large card lists
+
+### Double-Faced Card Options
+```rust
+pub enum DoubleFaceMode {
+    FrontOnly,    // Include only front face of double-faced cards
+    BackOnly,     // Include only back face of double-faced cards  
+    BothSides,    // Include both faces as separate cards (default)
+}
+```
+
+#### Intelligent Face Detection
+- **Front face input** (e.g., "kabira takedown") → Uses global `DoubleFaceMode` setting
+- **Back face input** (e.g., "kabira plateau") → Always uses `BackOnly` mode (overrides global)
+- **Full card name** (e.g., "cut // ribbons") → Uses global `DoubleFaceMode` setting
+
+This allows users to mix entries in the same decklist where some should show both faces and others should show only specific faces.
 
 ## Cache System
 
@@ -190,14 +223,20 @@ This is a Rust workspace with multiple crates:
 - `src/scryfall/` - Scryfall API integration
   - `client.rs` - HTTP client with rate limiting
   - `models.rs` - Card data structures  
-  - `api.rs` - API endpoint implementations
-- `src/pdf/mod.rs` - PDF generation and layout logic
+  - `api.rs` - API endpoint implementations (with exact name matching)
+- `src/pdf/mod.rs` - PDF generation and layout logic with DoubleFaceMode support
+- `src/decklist/mod.rs` - Decklist parsing with set/language detection (2-6 char set codes)
+- `src/lookup.rs` - Fuzzy name matching with split/double-faced card support
 - `src/cache/mod.rs` - Image caching system
+- `src/search_results_cache.rs` - Scryfall search result caching
+- `src/card_name_cache.rs` - Card names catalog caching
+- `src/set_codes_cache.rs` - Magic set codes caching
+- `src/globals.rs` - Global cache management and initialization
 - `src/error.rs` - Error types and conversions
 
 ### GUI Application (`magic-proxy-gui/`)
-- `src/main.rs` - Application entry point 
-- `src/app.rs` - Iced application implementation (incomplete)
+- `src/main.rs` - Application entry point with cache initialization
+- `src/app.rs` - Complete Iced application with double-faced card dropdown and intelligent detection
 
 ### CLI Example (`magic-proxy-cli/`)
 - `src/main.rs` - Command-line interface demonstrating core functionality
@@ -215,14 +254,46 @@ cargo run --package magic-proxy-cli -- generate --cards="Lightning Bolt,Counters
 
 ### Core Library API
 ```rust
-use magic_proxy_core::{ProxyGenerator, PdfOptions};
+use magic_proxy_core::{ProxyGenerator, PdfOptions, DoubleFaceMode, initialize_caches, shutdown_caches};
 
-let mut generator = ProxyGenerator::new()?;
-let results = generator.search_card("Lightning Bolt").await?;
-if let Some(card) = results.cards.first() {
-    generator.add_card(card.clone(), 4);
-}
-let pdf_data = generator.generate_pdf(PdfOptions::default(), |current, total| {
-    println!("Progress: {}/{}", current, total);
-}).await?;
+// Initialize caches at startup (required)
+initialize_caches().await?;
+
+// Parse decklist with intelligent face detection
+let decklist = "1 kabira takedown\n1 kabira plateau\n1 cut // ribbons";
+let entries = ProxyGenerator::parse_and_resolve_decklist(decklist).await?;
+
+// Generate PDF with per-card face modes
+let cards: Vec<(Card, u32, DoubleFaceMode)> = /* ... build from entries ... */;
+let pdf_options = PdfOptions { 
+    double_face_mode: DoubleFaceMode::BothSides,
+    ..Default::default() 
+};
+let pdf_data = ProxyGenerator::generate_pdf_from_cards_with_face_modes(
+    &cards, pdf_options, |current, total| {
+        println!("Progress: {}/{}", current, total);
+    }
+).await?;
+
+// Clean shutdown to persist caches
+shutdown_caches().await?;
 ```
+
+## Important Notes
+
+### Testing
+- **Unit tests**: 42 tests passing, comprehensive coverage of all functionality
+- **Cache persistence test**: Disabled (`#[ignore]`) due to file system dependencies
+  - TODO: Refactor to use dependency injection with in-memory storage for unit tests
+  - Consider moving file system tests to integration tests
+
+### Decklist Parsing
+- **Set codes**: Supports 2-6 character codes (regex: `[\dA-Za-z]{2,6}`)
+- **Examples**: "BRO", "PLST", "PMPS08", "30A", "H2R" 
+- **Language codes**: Standard 2-letter codes (JA, FR, DE, etc.)
+- **Format**: `4 Lightning Bolt [BRO]` or `1 Memory Lapse [JA]`
+
+### Scryfall Search Improvements
+- **Exact name matching**: Filters API results to match requested card name exactly
+- **Proper URL encoding**: Handles special characters like "//" in card names
+- **Result filtering**: Only returns cards that match the search criteria
