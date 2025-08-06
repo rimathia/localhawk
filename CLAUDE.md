@@ -297,3 +297,188 @@ shutdown_caches().await?;
 - **Exact name matching**: Filters API results to match requested card name exactly
 - **Proper URL encoding**: Handles special characters like "//" in card names
 - **Result filtering**: Only returns cards that match the search criteria
+
+## Planned Feature: Multi-Page Grid Preview with Print Selection
+
+**Status**: Designed, ready for implementation
+
+This feature extends beyond MagicHawk's functionality by providing visual PDF preview with per-card print selection capabilities.
+
+### Core Concept
+
+Users can preview exactly what their PDF will look like as 3x3 grids (one per PDF page) and click on any card to select from alternative printings for that decklist entry.
+
+### Key Design Principles
+
+#### Entry-Based Print Selection
+- **One selection per decklist entry**: `4x Lightning Bolt` = one print selection affecting all 4 card images
+- **Consistent behavior**: All copies of the same decklist entry use the same selected printing
+- **Leverages existing logic**: Builds on current `DecklistEntry` structure and set/language parsing
+
+#### Multi-Page Preview System
+- **Page-by-page grids**: Each PDF page (9 cards) gets its own 3x3 preview grid
+- **Navigation controls**: Previous/Next buttons with "Page X of Y" indicator  
+- **Independent selections**: Print choices on different pages are managed separately
+- **Persistent state**: Navigate away and back - all selections are maintained
+
+#### Integration with Existing Set Selection
+- **Set hints become defaults**: `[LEA]` in decklist makes LEA the initial selection in print picker
+- **User override capability**: Any manual selection supersedes the automatic set hint
+- **Backward compatibility**: Existing decklist parsing behavior remains unchanged
+
+### Data Structure Design
+
+```rust
+/// Multi-page grid preview state
+pub struct GridPreview {
+    pub entries: Vec<PreviewEntry>,     // One per decklist entry
+    pub current_page: usize,            // 0-indexed current page
+    pub total_pages: usize,             // Calculated from card count
+    pub selected_entry_index: Option<usize>, // For print selection modal
+}
+
+/// Represents one decklist entry with all its printings and positions
+pub struct PreviewEntry {
+    pub decklist_entry: DecklistEntry,     // Original "4x Lightning Bolt [LEA]"
+    pub available_printings: Vec<Card>,    // All printings found from search
+    pub selected_printing: Option<usize>,  // Index into available_printings
+    pub grid_positions: Vec<GridPosition>, // Where this entry's cards appear
+}
+
+/// Individual card position in the grid layout
+pub struct GridPosition {
+    pub page: usize,                    // Which page this position is on
+    pub position_in_page: usize,        // 0-8 position within 3x3 grid
+    pub entry_index: usize,             // Back-reference to parent entry
+    pub copy_number: usize,             // 1st, 2nd, 3rd, 4th copy of entry
+}
+
+/// Page navigation state
+pub struct PageNavigation {
+    pub current_page: usize,            // Current page being viewed
+    pub total_pages: usize,             // Total pages calculated from cards
+    pub can_go_prev: bool,              // Navigation state
+    pub can_go_next: bool,
+}
+```
+
+### UI/UX Design
+
+#### Grid Preview Interface
+- **Visual accuracy**: 3x3 grids show exact PDF page layout
+- **Entry grouping**: Visual indicators (borders, badges) show which cards belong to same entry
+- **Hover effects**: Highlight all positions of same entry when hovering over any instance
+- **Click interaction**: Click any card instance → open print selection for entire entry
+
+#### Print Selection Modal
+- **Modal title**: "Select printing for 4x Lightning Bolt [current: LEA]"
+- **Thumbnail grid**: Show all available printings as clickable thumbnails
+- **Set/language info**: Overlay on each thumbnail showing set code and language
+- **Default selection**: Highlight the set hint from decklist (`[LEA]`) if available
+- **Immediate update**: Modal closes → all related grid positions update instantly
+
+#### Page Navigation
+- **Navigation bar**: "Page 1 of 4" with Previous/Next buttons
+- **Page indicators**: Show completion status (e.g., "3 custom selections on this page")
+- **Keyboard shortcuts**: Arrow keys for page navigation, ESC to close modals
+
+### New Message Types
+
+```rust
+pub enum Message {
+    // Existing messages remain unchanged...
+    
+    // Grid preview lifecycle
+    BuildGridPreview,
+    GridPreviewBuilt(Result<GridPreview, String>),
+    
+    // Page navigation
+    NextPage,
+    PrevPage,
+    GoToPage(usize),
+    
+    // Print selection
+    ShowPrintSelection(usize),          // Entry index
+    SelectPrint { 
+        entry_index: usize, 
+        print_index: usize 
+    },
+    ClosePrintSelection,
+    
+    // Image loading for preview
+    PreviewImageLoaded(String, Vec<u8>), // URL, image data
+}
+```
+
+### State Integration
+
+The preview system extends the existing `AppState` structure:
+
+```rust
+pub struct AppState {
+    // Existing fields remain unchanged...
+    
+    // New preview-related fields
+    pub grid_preview: Option<GridPreview>,
+    pub page_navigation: Option<PageNavigation>,
+    pub preview_mode: PreviewMode,
+    pub preview_images: HashMap<String, Vec<u8>>, // Image cache for previews
+}
+
+pub enum PreviewMode {
+    Hidden,           // Traditional workflow (parse → generate)
+    GridPreview,      // Show 3x3 grid preview
+    PrintSelection,   // Modal for selecting prints
+}
+```
+
+### Implementation Strategy
+
+#### Phase 1: Core Data Structures
+1. Add preview-related structs to `src/app.rs`
+2. Extend `AppState` with preview fields
+3. Implement grid position calculation logic
+4. Add new message types and handlers
+
+#### Phase 2: Grid Preview UI
+1. Create 3x3 grid view using Iced's `Container` and `image` widgets
+2. Implement page navigation controls
+3. Add entry grouping visual indicators
+4. Handle click events to identify entry selection
+
+#### Phase 3: Print Selection Modal
+1. Create modal overlay using Iced's layering capabilities
+2. Implement thumbnail grid for print selection
+3. Add set/language info overlays on thumbnails
+4. Handle selection and grid update logic
+
+#### Phase 4: Integration & Polish
+1. Wire into existing decklist parsing workflow
+2. Add keyboard shortcuts and accessibility features
+3. Implement hover effects and visual feedback
+4. Add loading states and error handling
+
+### Workflow Integration
+
+The feature integrates seamlessly into the existing workflow:
+
+**Current**: `Parse Decklist → Generate PDF → Save`
+**Enhanced**: `Parse Decklist → Preview Pages → [Optional: Customize Prints] → Generate PDF → Save`
+
+Users can still use the traditional workflow (skip preview) or take advantage of the enhanced print selection capabilities.
+
+### Technical Benefits
+
+- **Builds on existing architecture**: Leverages `DecklistEntry`, `CardSearchResult`, and image caching
+- **Minimal disruption**: Current functionality remains unchanged  
+- **Performance optimized**: Reuses cached images and search results
+- **Scalable design**: Handles large decklists with efficient pagination
+- **User-centric**: Intuitive entry-based grouping matches user mental model
+
+### Future Enhancements
+
+- **Drag & drop reordering**: Allow users to rearrange card positions within pages
+- **Print filtering**: Filter available printings by date, legality, or price
+- **Bulk operations**: Select printings for multiple entries at once
+- **Export preferences**: Save and reuse print selection preferences
+- **Preview export**: Save preview grids as images for sharing
