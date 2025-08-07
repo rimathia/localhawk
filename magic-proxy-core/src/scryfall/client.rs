@@ -55,12 +55,19 @@ impl ScryfallClient {
     }
 
     pub async fn get_image(&self, url: &str) -> Result<printpdf::image_crate::DynamicImage, ProxyError> {
-        let response = self.call(url).await?;
-        let bytes = response.bytes().await?;
+        let raw_bytes = self.get_image_bytes(url).await?;
         
-        printpdf::image_crate::load_from_memory(&bytes)
+        printpdf::image_crate::load_from_memory(&raw_bytes)
             .map_err(|e| ProxyError::Cache(format!("Failed to load image: {}", e)))
     }
+    
+    /// Get raw image bytes from URL (uses same rate limiting as get_image)
+    pub async fn get_image_bytes(&self, url: &str) -> Result<Vec<u8>, ProxyError> {
+        let response = self.call(url).await?;
+        let bytes = response.bytes().await?;
+        Ok(bytes.to_vec())
+    }
+
 
 }
 

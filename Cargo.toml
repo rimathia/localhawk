@@ -16,7 +16,7 @@ printpdf = { version = "0.5", features = ["embedded_images"] }
 time = { version = "0.3", features = ["serde", "formatting"] }
 lazy_static = "1.4"
 log = "0.4"
-iced = { version = "0.13", features = ["tokio"] }
+iced = { version = "0.13", features = ["tokio", "image"] }
 clap = "4.0"
 regex = "1.10"
 ngrammatic = "0.4"

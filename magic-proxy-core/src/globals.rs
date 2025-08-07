@@ -246,7 +246,7 @@ pub async fn get_or_fetch_image(url: &str) -> Result<DynamicImage, ProxyError> {
     // Try to get from cache first (note: this needs mutable access for LRU tracking)
     let cached_image = {
         let mut cache_guard = cache.write().unwrap();
-        cache_guard.get(url).map(|x| x.clone())
+        cache_guard.get(url)
     };
     
     match cached_image {
@@ -255,23 +255,44 @@ pub async fn get_or_fetch_image(url: &str) -> Result<DynamicImage, ProxyError> {
         },
         None => {
             debug!(url = %url, "Image cache MISS, fetching from network");
-            let new_image = client.get_image(url).await?;
             
-            // Insert into cache (this handles disk persistence and LRU eviction)
+            // Fetch raw bytes and cache them
+            let raw_bytes = client.get_image_bytes(url).await?;
+            let dynamic_image = printpdf::image_crate::load_from_memory(&raw_bytes)
+                .map_err(|e| ProxyError::Cache(format!("Failed to decode image: {}", e)))?;
+            
+            // Insert raw bytes into cache (this handles disk persistence and LRU eviction)
             {
                 let mut cache_guard = cache.write().unwrap();
-                cache_guard.insert(url.to_string(), new_image.clone())?;
+                cache_guard.insert(url.to_string(), raw_bytes)?;
             }
             
-            Ok(new_image)
+            Ok(dynamic_image)
         }
     }
 }
+
 
 pub fn get_card_name_cache_info() -> Option<(time::OffsetDateTime, usize)> {
     let cache_info_ref = get_card_name_cache_info_ref();
     let cache_info_guard = cache_info_ref.read().unwrap();
     cache_info_guard.clone()
+}
+
+/// Get image cache statistics (count and size in MB)
+pub fn get_image_cache_info() -> (usize, f64) {
+    let cache = get_image_cache();
+    let cache_guard = cache.read().unwrap();
+    let count = cache_guard.size();
+    let size_mb = cache_guard.size_bytes() as f64 / (1024.0 * 1024.0);
+    (count, size_mb)
+}
+
+/// Get raw image bytes from cache for GUI display (returns None if not cached)
+pub fn get_cached_image_bytes(url: &str) -> Option<Vec<u8>> {
+    let cache = get_image_cache();
+    let mut cache_guard = cache.write().unwrap();
+    cache_guard.get_raw_bytes(url)
 }
 
 pub async fn get_or_fetch_search_results(card_name: &str) -> Result<crate::scryfall::CardSearchResult, ProxyError> {

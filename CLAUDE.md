@@ -68,6 +68,13 @@ Magic Card Proxy Sheet Generator - A Rust GUI application that creates PDF proxy
 - Enforce 100ms cooldown between Scryfall API requests
 - Both async and blocking variants available
 
+### Background Image Loading
+- **Progressive Loading**: Images load sequentially, starting with current PDF images then alternative printings
+- **Rate-Limited**: Respects existing 10 requests/second Scryfall limit
+- **Cache Integration**: Uses existing image cache system, stores raw bytes for GUI efficiency
+- **Non-Blocking**: Background tasks don't interfere with UI responsiveness
+- **Error Handling**: Failed loads don't block successful images
+
 ### Scryfall Client Structure
 ```rust
 pub struct ScryfallClient {
@@ -136,7 +143,9 @@ The application uses a sophisticated multi-layered caching system optimized for 
 #### 1. Image Cache (`ImageCache`)
 - **Purpose**: Stores downloaded card images to avoid repeated network requests
 - **Location**: `~/.cache/magic-proxy/` (platform-specific cache directory)
-- **Format**: JPEG files with SHA256-hashed filenames + JSON metadata
+- **Format**: Raw JPEG/PNG bytes with SHA256-hashed filenames + JSON metadata
+- **Storage Strategy**: Stores raw bytes as downloaded from Scryfall, converts to `DynamicImage` on-demand for PDF generation
+- **GUI Access**: `get_cached_image_bytes()` provides raw bytes for direct use with `iced::widget::Image`
 - **Size Limit**: 1 GB by default (`DEFAULT_MAX_SIZE_MB = 1000`)
 - **Eviction**: LRU (Least Recently Used) when cache exceeds size limit
 - **Persistence Strategy**: 
@@ -236,7 +245,13 @@ This is a Rust workspace with multiple crates:
 
 ### GUI Application (`magic-proxy-gui/`)
 - `src/main.rs` - Application entry point with cache initialization
-- `src/app.rs` - Complete Iced application with double-faced card dropdown and intelligent detection
+- `src/app.rs` - Complete Iced application with:
+  - **Grid Preview System**: 3x3 preview grids showing actual card images when cached
+  - **Print Selection Modal**: Browse alternative printings with thumbnail images
+  - **Background Image Loading**: Progressive image loading with rate limiting
+  - **Entry-Based Print Selection**: One print choice per decklist entry affects all copies
+  - **Page Navigation**: Multi-page navigation for large decklists
+  - **Double-Faced Card Support**: Intelligent face detection and mode selection
 
 ### CLI Example (`magic-proxy-cli/`)
 - `src/main.rs` - Command-line interface demonstrating core functionality
@@ -298,11 +313,11 @@ shutdown_caches().await?;
 - **Proper URL encoding**: Handles special characters like "//" in card names
 - **Result filtering**: Only returns cards that match the search criteria
 
-## Planned Feature: Multi-Page Grid Preview with Print Selection
+## Multi-Page Grid Preview with Print Selection
 
-**Status**: Designed, ready for implementation
+**Status**: ✅ IMPLEMENTED
 
-This feature extends beyond MagicHawk's functionality by providing visual PDF preview with per-card print selection capabilities.
+This feature extends beyond MagicHawk's functionality by providing visual PDF preview with per-card print selection capabilities. Users can now preview exactly what their PDF will look like and select alternative printings for each decklist entry.
 
 ### Core Concept
 
@@ -432,31 +447,31 @@ pub enum PreviewMode {
 }
 ```
 
-### Implementation Strategy
+### Implementation Status
 
-#### Phase 1: Core Data Structures
-1. Add preview-related structs to `src/app.rs`
-2. Extend `AppState` with preview fields
-3. Implement grid position calculation logic
-4. Add new message types and handlers
+#### Phase 1: Core Data Structures ✅ COMPLETED
+1. ✅ Added preview-related structs to `src/app.rs` (`GridPreview`, `PreviewEntry`, `GridPosition`)
+2. ✅ Extended `AppState` with preview fields and `PreviewMode` enum
+3. ✅ Implemented grid position calculation logic
+4. ✅ Added new message types and handlers
 
-#### Phase 2: Grid Preview UI
-1. Create 3x3 grid view using Iced's `Container` and `image` widgets
-2. Implement page navigation controls
-3. Add entry grouping visual indicators
-4. Handle click events to identify entry selection
+#### Phase 2: Grid Preview UI ✅ COMPLETED  
+1. ✅ Created 3x3 grid view with actual card images (no spacing, PDF-accurate)
+2. ✅ Implemented page navigation controls with Previous/Next buttons
+3. ✅ Added visual card display with fallback to loading text
+4. ✅ Handle click events for entry selection and print modal
 
-#### Phase 3: Print Selection Modal
-1. Create modal overlay using Iced's layering capabilities
-2. Implement thumbnail grid for print selection
-3. Add set/language info overlays on thumbnails
-4. Handle selection and grid update logic
+#### Phase 3: Print Selection Modal ✅ COMPLETED
+1. ✅ Created modal overlay showing alternative printings
+2. ✅ Implemented 4x4 thumbnail grid for print selection with actual images
+3. ✅ Added set/language info overlays on thumbnails
+4. ✅ Handle selection and grid update logic
 
-#### Phase 4: Integration & Polish
-1. Wire into existing decklist parsing workflow
-2. Add keyboard shortcuts and accessibility features
-3. Implement hover effects and visual feedback
-4. Add loading states and error handling
+#### Phase 4: Integration & Polish ✅ MOSTLY COMPLETED
+1. ✅ Wired into existing decklist parsing workflow
+2. 🔄 Keyboard shortcuts and accessibility features (basic implementation)
+3. 🔄 Hover effects and visual feedback (future enhancement)
+4. ✅ Added loading states and error handling
 
 ### Workflow Integration
 

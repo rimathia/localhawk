@@ -1,8 +1,8 @@
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, text_editor};
-use iced::{Element, Length, Task};
+use iced::widget::{button, column, container, image, pick_list, row, scrollable, text, text_editor};
+use iced::{Element, Length, Task, Theme};
 use magic_proxy_core::{
     Card, DecklistEntry, DoubleFaceMode, NameMatchMode, PdfOptions, ProxyGenerator,
-    force_update_card_lookup, get_card_name_cache_info,
+    force_update_card_lookup, get_card_name_cache_info, get_image_cache_info, get_cached_image_bytes,
 };
 use rfd::AsyncFileDialog;
 
@@ -132,6 +132,49 @@ pub enum PreviewMode {
     PrintSelection,   // Modal for selecting prints
 }
 
+/// Background image loader state for sequential loading
+#[derive(Debug, Clone)]
+pub struct BackgroundLoader {
+    pub entries: Vec<DecklistEntry>,
+    pub current_entry: usize,
+    pub current_alternative: usize,
+    pub total_images: usize,
+    pub loaded_images: usize,
+    pub phase: LoadingPhase,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum LoadingPhase {
+    Primary,      // Loading primary images (first printing of each card)
+    Alternatives, // Loading alternative printings
+}
+
+impl BackgroundLoader {
+    pub fn new(entries: Vec<DecklistEntry>) -> Self {
+        // Estimate total images (will be updated as we discover actual printings)
+        let estimated_total = entries.len() * 3; // Rough estimate: 3 printings per card on average
+        
+        Self {
+            entries,
+            current_entry: 0,
+            current_alternative: 0,
+            total_images: estimated_total,
+            loaded_images: 0,
+            phase: LoadingPhase::Primary,
+        }
+    }
+    
+    pub fn has_more_images(&self) -> bool {
+        match self.phase {
+            LoadingPhase::Primary => self.current_entry < self.entries.len(),
+            LoadingPhase::Alternatives => {
+                // Check if there are more alternatives to load
+                self.current_entry < self.entries.len()
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     DecklistAction(text_editor::Action),
@@ -161,6 +204,11 @@ pub enum Message {
         print_index: usize 
     },
     ClosePrintSelection,
+    
+    // Background image loading
+    StartBackgroundImageLoading(Vec<DecklistEntry>),
+    LoadNextImage,
+    ImageLoadResult { url: String, success: bool, loader: BackgroundLoader },
 }
 
 pub struct AppState {
@@ -179,6 +227,9 @@ pub struct AppState {
     page_navigation: Option<PageNavigation>,
     preview_mode: PreviewMode,
     is_building_preview: bool,
+    
+    // Background image loading
+    background_loader: Option<BackgroundLoader>,
 }
 
 impl AppState {
@@ -201,6 +252,9 @@ impl AppState {
             page_navigation: None,
             preview_mode: PreviewMode::Hidden,
             is_building_preview: false,
+            
+            // Initialize background loading fields
+            background_loader: None,
         }
     }
 }
@@ -288,6 +342,103 @@ async fn build_grid_preview_from_entries(entries: Vec<DecklistEntry>) -> Result<
     Ok(grid_preview)
 }
 
+/// Load the next image in the background loading sequence using core library functions
+async fn load_next_image(loader: BackgroundLoader) -> (String, bool, BackgroundLoader) {
+    use magic_proxy_core::get_or_fetch_image;
+    
+    let mut updated_loader = loader;
+    
+    match updated_loader.phase {
+        LoadingPhase::Primary => {
+            if let Some(entry) = updated_loader.entries.get(updated_loader.current_entry) {
+                log::debug!("Loading primary image for entry: {}", entry.name);
+                
+                match ProxyGenerator::search_card(&entry.name).await {
+                    Ok(search_result) => {
+                        if let Some(primary_card) = search_result.cards.first() {
+                            // Use the core library's get_or_fetch_image to cache the image
+                            let success = match get_or_fetch_image(&primary_card.border_crop).await {
+                                Ok(_) => {
+                                    log::debug!("Successfully cached primary image: {}", primary_card.border_crop);
+                                    true
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to cache primary image {}: {}", primary_card.border_crop, e);
+                                    false
+                                }
+                            };
+                            
+                            updated_loader.loaded_images += 1;
+                            updated_loader.current_entry += 1;
+                            
+                            // If we've loaded all primary images, switch to alternatives phase
+                            if updated_loader.current_entry >= updated_loader.entries.len() {
+                                updated_loader.phase = LoadingPhase::Alternatives;
+                                updated_loader.current_entry = 0;
+                                updated_loader.current_alternative = 1; // Skip first (already loaded in primary)
+                            }
+                            
+                            return (primary_card.border_crop.clone(), success, updated_loader);
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to search for card '{}': {}", entry.name, e);
+                        updated_loader.current_entry += 1;
+                        return ("".to_string(), false, updated_loader);
+                    }
+                }
+            }
+        }
+        LoadingPhase::Alternatives => {
+            // Load alternative printings for each card
+            if let Some(entry) = updated_loader.entries.get(updated_loader.current_entry) {
+                match ProxyGenerator::search_card(&entry.name).await {
+                    Ok(search_result) => {
+                        if let Some(alternative) = search_result.cards.get(updated_loader.current_alternative) {
+                            log::debug!("Loading alternative {} for entry: {}", updated_loader.current_alternative, entry.name);
+                            
+                            // Use the core library's get_or_fetch_image to cache the image
+                            let success = match get_or_fetch_image(&alternative.border_crop).await {
+                                Ok(_) => {
+                                    log::debug!("Successfully cached alternative image: {}", alternative.border_crop);
+                                    true
+                                }
+                                Err(e) => {
+                                    log::warn!("Failed to cache alternative image {}: {}", alternative.border_crop, e);
+                                    false
+                                }
+                            };
+                            
+                            updated_loader.loaded_images += 1;
+                            updated_loader.current_alternative += 1;
+                            
+                            // If no more alternatives for this card, move to next card
+                            if updated_loader.current_alternative >= search_result.cards.len() {
+                                updated_loader.current_entry += 1;
+                                updated_loader.current_alternative = 1; // Reset to 1 (skip primary)
+                            }
+                            
+                            return (alternative.border_crop.clone(), success, updated_loader);
+                        } else {
+                            // No more alternatives for this card, move to next
+                            updated_loader.current_entry += 1;
+                            updated_loader.current_alternative = 1;
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to search for card '{}': {}", entry.name, e);
+                        updated_loader.current_entry += 1;
+                        updated_loader.current_alternative = 1;
+                    }
+                }
+            }
+        }
+    }
+    
+    // If we get here, we're done loading
+    ("".to_string(), true, updated_loader)
+}
+
 pub fn initialize() -> (AppState, Task<Message>) {
     (AppState::new(), Task::none())
 }
@@ -334,15 +485,28 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     card.preferred_face
                 );
             }
-            state.parsed_cards = cards;
+            state.parsed_cards = cards.clone();
             state.error_message = None;
-            state.display_text = format!("Parsed {} cards successfully!", state.parsed_cards.len());
+            state.display_text = format!("Parsed {} cards successfully! Loading images...", state.parsed_cards.len());
+            
+            // Start background image loading immediately after parsing
+            if !cards.is_empty() {
+                state.background_loader = Some(BackgroundLoader::new(cards.clone()));
+                
+                return Task::perform(
+                    async { cards },
+                    Message::StartBackgroundImageLoading,
+                );
+            }
         }
         Message::ClearDecklist => {
             state.decklist_content = text_editor::Content::new();
             state.parsed_cards.clear();
             state.error_message = None;
             state.display_text = "Decklist cleared!".to_string();
+            
+            // Clear background loading state
+            state.background_loader = None;
         }
         Message::GeneratePdf => {
             if state.parsed_cards.is_empty() {
@@ -677,6 +841,80 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 grid_preview.selected_entry_index = None;
             }
         }
+        
+        Message::StartBackgroundImageLoading(_entries) => {
+            log::debug!("Starting background image loading");
+            
+            // Start loading the first image using LoadNextImage
+            return Task::perform(
+                async { () },
+                |_| Message::LoadNextImage,
+            );
+        }
+        
+        Message::LoadNextImage => {
+            if let Some(loader) = state.background_loader.take() {
+                if loader.has_more_images() {
+                    return Task::perform(
+                        load_next_image(loader),
+                        |(url, success, updated_loader)| Message::ImageLoadResult { 
+                            url, 
+                            success,
+                            loader: updated_loader 
+                        }
+                    );
+                } else {
+                    log::debug!("Background image loading completed");
+                    state.display_text = format!(
+                        "Parsed {} cards successfully! All images loaded ({} total).",
+                        state.parsed_cards.len(),
+                        loader.loaded_images
+                    );
+                }
+            }
+        }
+        
+        Message::ImageLoadResult { url, success, loader } => {
+            // Update the loader state
+            state.background_loader = Some(loader);
+            
+            if success && !url.is_empty() {
+                log::debug!("Successfully cached image in core library: {}", url);
+            } else if !success && !url.is_empty() {
+                log::warn!("Failed to cache image: {}", url);
+            }
+            
+            // Update progress display and continue loading
+            if let Some(ref loader) = state.background_loader {
+                if loader.has_more_images() {
+                    let phase_text = match loader.phase {
+                        LoadingPhase::Primary => "primary images",
+                        LoadingPhase::Alternatives => "alternatives",
+                    };
+                    state.display_text = format!(
+                        "Parsed {} cards successfully! Loading {} ({}/{} loaded)...",
+                        state.parsed_cards.len(),
+                        phase_text,
+                        loader.loaded_images,
+                        loader.total_images
+                    );
+                    
+                    // Continue loading next image
+                    return Task::perform(
+                        async { () },
+                        |_| Message::LoadNextImage,
+                    );
+                } else {
+                    // All images loaded
+                    state.display_text = format!(
+                        "Parsed {} cards successfully! All images cached ({} total).",
+                        state.parsed_cards.len(),
+                        loader.loaded_images
+                    );
+                    state.background_loader = None; // Clear the loader
+                }
+            }
+        }
     }
     Task::none()
 }
@@ -827,15 +1065,24 @@ pub fn view(state: &AppState) -> Element<Message> {
             get_card_name_cache_info()
                 .map(|(timestamp, count)| {
                     format!(
-                        "Cache: {} cards, last updated: {}",
+                        "Card names: {} cached, last updated: {}",
                         count,
                         timestamp
                             .format(&time::format_description::well_known::Rfc3339)
                             .unwrap_or_else(|_| "Unknown".to_string())
                     )
                 })
-                .unwrap_or_else(|| "No cache found".to_string())
+                .unwrap_or_else(|| "No card name cache found".to_string())
         )
+        .size(12),
+        text({
+            let (count, size_mb) = get_image_cache_info();
+            format!(
+                "Images: {} cached, {:.1} MB", 
+                count, 
+                size_mb
+            )
+        })
         .size(12),
     ]
     .spacing(5);
@@ -893,21 +1140,44 @@ pub fn view(state: &AppState) -> Element<Message> {
                         let position_idx = row_idx * 3 + col_idx;
                         
                         if let Some((entry_idx, _position, entry)) = current_positions.get(position_idx) {
-                            // Card found for this position
-                            let card_name = if let Some(selected_card) = entry.get_selected_card() {
-                                format!("{}\n[{}]", selected_card.name, selected_card.set.to_uppercase())
+                            // Try to get cached image, fallback to text if not available
+                            // 
+                            // PERFORMANCE NOTE: Currently calls get_cached_image_bytes() on every render cycle
+                            // (including every keystroke in text field). This causes cache hits for the same
+                            // URL repeatedly. We create a new image::Handle from raw bytes each time, rather
+                            // than caching the handles themselves in app state. Future optimization could
+                            // store image::Handle objects in app state to avoid repeated byte-to-handle conversion.
+                            let card_widget = if let Some(selected_card) = entry.get_selected_card() {
+                                if let Some(image_bytes) = get_cached_image_bytes(&selected_card.border_crop) {
+                                    // Display actual card image with no spacing (like PDF)
+                                    let image_handle = image::Handle::from_bytes(image_bytes);
+                                    button(image::Image::<image::Handle>::new(image_handle)
+                                        .width(Length::Fixed(120.0))
+                                        .height(Length::Fixed(168.0))) // Maintain Magic card aspect ratio
+                                        .on_press(Message::ShowPrintSelection(*entry_idx))
+                                        .width(Length::Fixed(120.0))
+                                        .height(Length::Fixed(168.0))
+                                        .padding(0) // No padding for seamless grid
+                                } else {
+                                    // Fallback to text while image loads
+                                    button(text(format!("{}\n[{}]\nLoading...", selected_card.name, selected_card.set.to_uppercase()))
+                                        .size(9))
+                                        .on_press(Message::ShowPrintSelection(*entry_idx))
+                                        .width(Length::Fixed(120.0))
+                                        .height(Length::Fixed(168.0))
+                                        .padding(0)
+                                }
                             } else {
-                                entry.decklist_entry.name.clone()
+                                // No card selected, show entry name
+                                button(text(entry.decklist_entry.name.clone())
+                                    .size(10))
+                                    .on_press(Message::ShowPrintSelection(*entry_idx))
+                                    .width(Length::Fixed(120.0))
+                                    .height(Length::Fixed(168.0))
+                                    .padding(0)
                             };
                             
-                            // TODO: Replace with actual card image widget when image loading is implemented
-                            // TODO: Add copy indicator (1/4, 2/4, etc.) for multi-card entries
-                            let card_button = button(text(card_name)
-                                .size(10))
-                                .on_press(Message::ShowPrintSelection(*entry_idx))
-                                .width(Length::Fixed(120.0))
-                                .height(Length::Fixed(80.0))
-                                .padding(5);
+                            let card_button = card_widget;
                             
                             grid_row.push(container(card_button).into());
                         } else {
@@ -915,13 +1185,13 @@ pub fn view(state: &AppState) -> Element<Message> {
                             let empty_slot = container(text("Empty")
                                 .size(10))
                                 .width(Length::Fixed(120.0))
-                                .height(Length::Fixed(80.0))
-                                .padding(5);
+                                .height(Length::Fixed(168.0))
+                                .padding(0);
                             
                             grid_row.push(empty_slot.into());
                         }
                     }
-                    grid_rows.push(row(grid_row).spacing(5).into());
+                    grid_rows.push(row(grid_row).spacing(0).into()); // No spacing between cards
                 }
 
                 column![
@@ -941,37 +1211,74 @@ pub fn view(state: &AppState) -> Element<Message> {
                             entry.decklist_entry.name
                         );
                         
-                        // Create buttons for each available printing
-                        // TODO: Replace text buttons with card image thumbnails for visual selection
-                        // TODO: Add visual selection indicator (highlight border, checkmark, etc.)
-                        // TODO: Add set/language info overlays on thumbnails
-                        // TODO: Add sorting/filtering options (by date, legality, price)
+                        // Create buttons for each available printing with actual images when available
                         let print_buttons: Vec<Element<Message>> = entry
                             .available_printings
                             .iter()
                             .enumerate()
                             .map(|(print_idx, card)| {
-                                let button_text = format!("{} [{}]", card.name, card.set.to_uppercase());
-                                let _is_selected = entry.selected_printing == Some(print_idx);
+                                let is_selected = entry.selected_printing == Some(print_idx);
                                 
-                                // TODO: Use different button style for selected printing
-                                button(text(button_text).size(12))
+                                // Try to show actual card image, fallback to text
+                                let button_content: Element<Message> = if let Some(image_bytes) = get_cached_image_bytes(&card.border_crop) {
+                                    // Show actual card image thumbnail
+                                    let image_handle = image::Handle::from_bytes(image_bytes);
+                                    column![
+                                        image::Image::<image::Handle>::new(image_handle)
+                                            .width(Length::Fixed(80.0))
+                                            .height(Length::Fixed(112.0)),
+                                        text::<Theme, iced::Renderer>(format!("{}\n[{}]", card.set.to_uppercase(), card.language.to_uppercase()))
+                                            .size(10)
+                                    ]
+                                    .spacing(2)
+                                    .into()
+                                } else {
+                                    // Fallback to text while image loads
+                                    column![
+                                        container(text("Loading...").size(10))
+                                            .width(Length::Fixed(80.0))
+                                            .height(Length::Fixed(112.0))
+                                            .center_x(Length::Fill)
+                                            .center_y(Length::Fill),
+                                        text(format!("{}\n[{}]", card.set.to_uppercase(), card.language.to_uppercase()))
+                                            .size(10)
+                                    ]
+                                    .spacing(2)
+                                    .into()
+                                };
+                                
+                                // Use different style for selected printing
+                                let btn = button(button_content)
                                     .on_press(Message::SelectPrint {
                                         entry_index: selected_entry_idx,
                                         print_index: print_idx,
                                     })
-                                    .padding(8)
-                                    .into()
+                                    .padding(if is_selected { 6 } else { 8 }); // Visual selection indicator
+                                
+                                // TODO: Add border or background color for selected printing
+                                btn.into()
                             })
                             .collect();
 
-                        // TODO: Implement proper modal overlay with backdrop and centered positioning
-                        // TODO: Add keyboard shortcuts (ESC to close, arrow keys to navigate)
-                        // TODO: Add search/filter functionality for large numbers of printings
+                        // Create a grid layout for print selection (4 per row)  
+                        let mut print_rows = Vec::new();
+                        let mut current_row = Vec::new();
+                        
+                        for (i, button) in print_buttons.into_iter().enumerate() {
+                            current_row.push(button);
+                            
+                            if current_row.len() == 4 || i == entry.available_printings.len() - 1 {
+                                // Complete row or last item
+                                print_rows.push(row(current_row).spacing(10).into());
+                                current_row = Vec::new();
+                            }
+                        }
+                        
                         column![
                             text(modal_title).size(16),
                             button("Close").on_press(Message::ClosePrintSelection).padding(5),
-                            scrollable(column(print_buttons).spacing(5)).height(Length::Fixed(300.0)),
+                            text("Click on a card image to select that printing:").size(12),
+                            scrollable(column(print_rows).spacing(10)).height(Length::Fixed(400.0)),
                         ]
                         .spacing(10)
                     } else {

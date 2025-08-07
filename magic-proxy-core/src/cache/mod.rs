@@ -1,4 +1,4 @@
-use printpdf::image_crate::{DynamicImage, ImageFormat};
+use printpdf::image_crate::DynamicImage;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use crate::error::ProxyError;
 
 #[derive(Debug)]
 struct CacheEntry {
-    image: DynamicImage,
+    raw_bytes: Vec<u8>,
     created_at: OffsetDateTime,
     last_accessed: OffsetDateTime,
 }
@@ -76,18 +76,38 @@ impl ImageCache {
         Ok(cache)
     }
 
-    pub fn get(&mut self, url: &str) -> Option<&DynamicImage> {
+    pub fn get(&mut self, url: &str) -> Option<DynamicImage> {
         if let Some(entry) = self.cache.get_mut(url) {
             entry.last_accessed = OffsetDateTime::now_utc();
             debug!(url = %url, "Image cache HIT");
-            Some(&entry.image)
+            
+            // Convert raw bytes to DynamicImage when requested
+            match printpdf::image_crate::load_from_memory(&entry.raw_bytes) {
+                Ok(image) => Some(image),
+                Err(e) => {
+                    warn!(url = %url, error = %e, "Failed to decode cached image bytes");
+                    None
+                }
+            }
         } else {
             debug!(url = %url, "Image cache MISS");
             None
         }
     }
+    
+    /// Get raw image bytes without converting to DynamicImage (for GUI display)
+    pub fn get_raw_bytes(&mut self, url: &str) -> Option<Vec<u8>> {
+        if let Some(entry) = self.cache.get_mut(url) {
+            entry.last_accessed = OffsetDateTime::now_utc();
+            debug!(url = %url, "Image cache HIT (raw bytes)");
+            Some(entry.raw_bytes.clone())
+        } else {
+            debug!(url = %url, "Image cache MISS (raw bytes)");
+            None
+        }
+    }
 
-    pub fn insert(&mut self, url: String, image: DynamicImage) -> Result<(), ProxyError> {
+    pub fn insert(&mut self, url: String, raw_bytes: Vec<u8>) -> Result<(), ProxyError> {
         let now = OffsetDateTime::now_utc();
         
         // Check if we need to evict entries to make room
@@ -97,15 +117,15 @@ impl ImageCache {
         let filename = self.url_to_filename(&url);
         let file_path = self.cache_dir.join(&filename);
         
-        // Save image to disk
-        image.save_with_format(&file_path, ImageFormat::Jpeg)
+        // Save raw bytes to disk
+        fs::write(&file_path, &raw_bytes)
             .map_err(|e| ProxyError::Cache(format!("Failed to save image to disk: {}", e)))?;
         
         // Insert into memory cache
         self.cache.insert(
             url.clone(),
             CacheEntry {
-                image,
+                raw_bytes,
                 created_at: now,
                 last_accessed: now,
             },
@@ -233,17 +253,17 @@ impl ImageCache {
                 continue;
             }
             
-            match printpdf::image_crate::open(&file_path) {
-                Ok(image) => {
+            match fs::read(&file_path) {
+                Ok(raw_bytes) => {
                     self.cache.insert(url, CacheEntry {
-                        image,
+                        raw_bytes,
                         created_at: disk_entry.created_at,
                         last_accessed: disk_entry.last_accessed,
                     });
                     loaded_count += 1;
                 }
                 Err(e) => {
-                    warn!(url = %url, file = %file_path.display(), error = %e, "Failed to load cached image");
+                    warn!(url = %url, file = %file_path.display(), error = %e, "Failed to load cached image bytes");
                     failed_count += 1;
                 }
             }
