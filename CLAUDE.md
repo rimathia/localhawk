@@ -26,7 +26,8 @@ Magic Card Proxy Sheet Generator - A Rust GUI application that creates PDF proxy
 
 ### Build and Run
 - `cargo build` - Compile the project
-- `cargo run` - Build and run the application
+- `cargo run -p magic-proxy-gui` - Build and run the GUI application
+- `cargo run -p magic-proxy-cli` - Build and run the CLI application
 - `cargo check` - Check for compilation errors without building
 
 ### Testing and Quality
@@ -261,10 +262,10 @@ This is a Rust workspace with multiple crates:
 ### CLI Tool
 ```bash
 # Search for cards
-cargo run --package magic-proxy-cli -- search "Lightning Bolt"
+cargo run -p magic-proxy-cli -- search "Lightning Bolt"
 
 # Generate PDF (when implemented)
-cargo run --package magic-proxy-cli -- generate --cards="Lightning Bolt,Counterspell" --output=proxies.pdf
+cargo run -p magic-proxy-cli -- generate --cards="Lightning Bolt,Counterspell" --output=proxies.pdf
 ```
 
 ### Core Library API

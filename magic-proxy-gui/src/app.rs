@@ -181,9 +181,9 @@ pub enum Message {
     ParseDecklist,
     DecklistParsed(Vec<DecklistEntry>),
     ClearDecklist,
+    GenerateAll, // New: Parse + Generate + Save in one step
     GeneratePdf,
     PdfGenerated(Result<Vec<u8>, String>),
-    SavePdf,
     FileSaved(Option<String>),
     ForceUpdateCardNames,
     CardNamesUpdated(Result<String, String>),
@@ -215,6 +215,7 @@ pub struct AppState {
     display_text: String,
     decklist_content: text_editor::Content,
     parsed_cards: Vec<DecklistEntry>,
+    parsed_cards_aligned_text: text_editor::Content, // Line-by-line aligned output
     is_parsing: bool,
     error_message: Option<String>,
     is_generating_pdf: bool,
@@ -230,6 +231,9 @@ pub struct AppState {
     
     // Background image loading
     background_loader: Option<BackgroundLoader>,
+    
+    // Auto-continue to PDF generation after parsing
+    auto_generate_after_parse: bool,
 }
 
 impl AppState {
@@ -240,6 +244,7 @@ impl AppState {
                 "2 Black Lotus [VMA]\n1 Counterspell [7ED]\n1 Memory Lapse [ja]\n1 kabira takedown\n1 kabira plateau\n1 cut // ribbons (pakh)",
             ),
             parsed_cards: Vec::new(),
+            parsed_cards_aligned_text: text_editor::Content::new(),
             is_parsing: false,
             error_message: None,
             is_generating_pdf: false,
@@ -255,8 +260,97 @@ impl AppState {
             
             // Initialize background loading fields
             background_loader: None,
+            
+            // Initialize auto-continue flag
+            auto_generate_after_parse: false,
         }
     }
+}
+
+/// Select the best card from available printings using the same logic as PDF generation
+fn select_card_from_printings(available_printings: &[Card], entry: &DecklistEntry) -> Option<usize> {
+    // Use the same selection logic as PDF generation for consistency
+    available_printings.iter().position(|c| {
+        // First check if the card name matches what we're looking for
+        let name_matches = c.name.to_lowercase() == entry.name.to_lowercase();
+
+        // Try to match both set and language if specified
+        let set_matches = if let Some(ref entry_set) = entry.set {
+            c.set.to_lowercase() == entry_set.to_lowercase()
+        } else {
+            true // No set filter
+        };
+
+        let lang_matches = if let Some(ref entry_lang) = entry.lang {
+            c.language.to_lowercase() == entry_lang.to_lowercase()
+        } else {
+            true // No language filter
+        };
+
+        name_matches && set_matches && lang_matches
+    })
+}
+
+/// Build aligned text output that matches input lines 1:1
+/// Uses current parsed_cards state (which may have updated printings)
+fn build_aligned_parsed_output(input_text: &str, parsed_cards: &[DecklistEntry]) -> String {
+    let input_lines: Vec<&str> = input_text.lines().collect();
+    let mut aligned_output = Vec::new();
+    let mut parsed_index = 0; // Index into successfully parsed entries
+    
+    for input_line in input_lines {
+        let trimmed_line = input_line.trim();
+        
+        if trimmed_line.is_empty() {
+            // Empty line in input -> empty line in output
+            aligned_output.push("".to_string());
+        } else if trimmed_line.starts_with("//") || trimmed_line.starts_with('#') {
+            // Comment line -> show as comment  
+            aligned_output.push(format!("// {}", trimmed_line));
+        } else {
+            // Try to parse this line to see if it should correspond to a parsed entry
+            let empty_set = std::collections::HashSet::new();
+            if let Some(_temp_entry) = magic_proxy_core::parse_line(input_line, &empty_set, &empty_set) {
+                // This line was parseable, so it should correspond to the next parsed entry
+                if let Some(resolved_entry) = parsed_cards.get(parsed_index) {
+                    let set_info = if let Some(set) = &resolved_entry.set {
+                        format!(" • Set: {}", set.to_uppercase())
+                    } else {
+                        String::new()
+                    };
+                    let lang_info = if let Some(lang) = &resolved_entry.lang {
+                        format!(" • Lang: {}", lang.to_uppercase())
+                    } else {
+                        String::new()
+                    };
+                    let face_info = if let Some(ref preferred_face) = resolved_entry.preferred_face {
+                        match preferred_face {
+                            NameMatchMode::Full => " • Face: Full".to_string(),
+                            NameMatchMode::Part(0) => " • Face: Front".to_string(),
+                            NameMatchMode::Part(1) => " • Face: Back".to_string(),
+                            NameMatchMode::Part(n) => format!(" • Face: Part({})", n),
+                        }
+                    } else {
+                        String::new()
+                    };
+                    
+                    aligned_output.push(format!(
+                        "✓ {}x {}{}{}{}",
+                        resolved_entry.multiple, resolved_entry.name, set_info, lang_info, face_info
+                    ));
+                    parsed_index += 1; // Move to next parsed entry
+                } else {
+                    // Ran out of parsed entries (shouldn't happen)
+                    aligned_output.push(format!("? Missing parsed entry for: {}", trimmed_line));
+                }
+            } else {
+                // Failed to parse -> show error
+                aligned_output.push(format!("✗ Failed: {}", trimmed_line));
+            }
+        }
+    }
+    
+    aligned_output.join("\n")
 }
 
 /// Build grid preview from parsed decklist entries
@@ -284,15 +378,8 @@ async fn build_grid_preview_from_entries(entries: Vec<DecklistEntry>) -> Result<
             return Err(format!("No printings found for card '{}'", decklist_entry.name));
         }
         
-        // Determine default selected printing based on set hint from decklist
-        let selected_printing = if let Some(ref decklist_set) = decklist_entry.set {
-            // Try to find a printing matching the set hint
-            available_printings.iter()
-                .position(|card| card.set.to_lowercase() == decklist_set.to_lowercase())
-        } else {
-            // No set hint, default to first printing
-            Some(0)
-        };
+        // Use unified card selection logic (same as PDF generation)
+        let selected_printing = select_card_from_printings(&available_printings, &decklist_entry);
         
         log::debug!("Selected printing index for '{}': {:?}", decklist_entry.name, selected_printing);
         
@@ -487,26 +574,55 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
             state.parsed_cards = cards.clone();
             state.error_message = None;
-            state.display_text = format!("Parsed {} cards successfully! Loading images...", state.parsed_cards.len());
+            state.display_text = format!("Parsed {} cards successfully! Loading images and building preview...", state.parsed_cards.len());
+            
+            // Build aligned text output for the right panel
+            let aligned_text = build_aligned_parsed_output(&state.decklist_content.text(), &state.parsed_cards);
+            state.parsed_cards_aligned_text = text_editor::Content::with_text(&aligned_text);
             
             // Start background image loading immediately after parsing
             if !cards.is_empty() {
                 state.background_loader = Some(BackgroundLoader::new(cards.clone()));
                 
-                return Task::perform(
-                    async { cards },
-                    Message::StartBackgroundImageLoading,
-                );
+                let mut tasks = vec![
+                    Task::perform(
+                        async { cards },
+                        Message::StartBackgroundImageLoading,
+                    ),
+                    Task::perform(
+                        async { () },
+                        |_| Message::BuildGridPreview,
+                    ),
+                ];
+                
+                // If GenerateAll was triggered, auto-continue to PDF generation
+                if state.auto_generate_after_parse {
+                    state.auto_generate_after_parse = false; // Reset flag
+                    tasks.push(Task::perform(
+                        async { () },
+                        |_| Message::GeneratePdf,
+                    ));
+                }
+                
+                return Task::batch(tasks);
             }
         }
         Message::ClearDecklist => {
             state.decklist_content = text_editor::Content::new();
             state.parsed_cards.clear();
+            state.parsed_cards_aligned_text = text_editor::Content::new();
             state.error_message = None;
             state.display_text = "Decklist cleared!".to_string();
             
             // Clear background loading state
             state.background_loader = None;
+        }
+        Message::GenerateAll => {
+            // Set flag to auto-continue to PDF generation after parsing
+            state.auto_generate_after_parse = true;
+            
+            // Trigger parsing (PDF generation will be auto-triggered in DecklistParsed handler)
+            return update(state, Message::ParseDecklist);
         }
         Message::GeneratePdf => {
             if state.parsed_cards.is_empty() {
@@ -543,26 +659,9 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                         card.language
                                     );
                                 }
-                                if let Some(card) = search_result.cards.into_iter().find(|c| {
-                                    // First check if the card name matches what we're looking for
-                                    let name_matches =
-                                        c.name.to_lowercase() == entry.name.to_lowercase();
-
-                                    // Try to match both set and language if specified
-                                    let set_matches = if let Some(ref entry_set) = entry.set {
-                                        c.set.to_lowercase() == entry_set.to_lowercase()
-                                    } else {
-                                        true // No set filter
-                                    };
-
-                                    let lang_matches = if let Some(ref entry_lang) = entry.lang {
-                                        c.language.to_lowercase() == entry_lang.to_lowercase()
-                                    } else {
-                                        true // No language filter
-                                    };
-
-                                    name_matches && set_matches && lang_matches
-                                }) {
+                                // Use unified card selection logic (same as preview)
+                                if let Some(selected_index) = select_card_from_printings(&search_result.cards, &entry) {
+                                    let card = search_result.cards.into_iter().nth(selected_index).unwrap();
                                     log::debug!(
                                         "Selected card: '{}' ({}) [{}]",
                                         card.name,
@@ -643,34 +742,29 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 Ok(pdf_data) => {
                     state.generated_pdf = Some(pdf_data.clone());
                     state.display_text =
-                        format!("PDF generated successfully! {} bytes", pdf_data.len());
+                        format!("PDF generated successfully! {} bytes - Opening save dialog...", pdf_data.len());
+                    
+                    // Auto-trigger save dialog after successful PDF generation
+                    return Task::perform(
+                        async {
+                            match AsyncFileDialog::new()
+                                .set_file_name("proxy_sheet.pdf")
+                                .add_filter("PDF Files", &["pdf"])
+                                .save_file()
+                                .await
+                            {
+                                Some(handle) => Some(handle.path().to_string_lossy().to_string()),
+                                None => None,
+                            }
+                        },
+                        Message::FileSaved,
+                    );
                 }
                 Err(error) => {
                     state.error_message = Some(error);
                     state.display_text = "PDF generation failed!".to_string();
                 }
             }
-        }
-        Message::SavePdf => {
-            if state.generated_pdf.is_none() {
-                state.error_message = Some("No PDF to save! Generate a PDF first.".to_string());
-                return Task::none();
-            }
-
-            return Task::perform(
-                async {
-                    match AsyncFileDialog::new()
-                        .set_file_name("proxy_sheet.pdf")
-                        .add_filter("PDF Files", &["pdf"])
-                        .save_file()
-                        .await
-                    {
-                        Some(handle) => Some(handle.path().to_string_lossy().to_string()),
-                        None => None,
-                    }
-                },
-                Message::FileSaved,
-            );
         }
         Message::FileSaved(file_path) => {
             if let Some(path) = file_path {
@@ -829,6 +923,11 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     }
                 }
             }
+            
+            // Rebuild aligned text output after print selection
+            let aligned_text = build_aligned_parsed_output(&state.decklist_content.text(), &state.parsed_cards);
+            state.parsed_cards_aligned_text = text_editor::Content::with_text(&aligned_text);
+            
             state.preview_mode = PreviewMode::GridPreview;
             if let Some(ref mut grid_preview) = state.grid_preview {
                 grid_preview.selected_entry_index = None;
@@ -920,116 +1019,87 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
 }
 
 pub fn view(state: &AppState) -> Element<Message> {
-    let decklist_section = column![
+    // Left side: Decklist input (text field only)
+    let decklist_input_section = column![
         text("Decklist Parser:").size(18),
         text("Paste your decklist below (supports various formats):").size(14),
         text_editor(&state.decklist_content)
             .on_action(Message::DecklistAction)
-            .height(Length::Fixed(150.0)),
-        row![
-            button(if state.is_parsing {
-                "Parsing..."
-            } else {
-                "Parse Decklist"
-            })
-            .on_press_maybe(if state.is_parsing {
-                None
-            } else {
-                Some(Message::ParseDecklist)
-            })
+            .height(Length::Fixed(400.0))
+            .width(400.0), // Fixed width for typical decklist entries
+    ]
+    .spacing(10)
+    .width(Length::Fixed(450.0)); // Container width slightly larger than text field
+
+    // Button row: independent width for proper spacing
+    let button_row = row![
+        button(if state.is_generating_pdf && state.is_parsing {
+            "Generating PDF..."
+        } else {
+            "Generate & Save PDF"
+        })
+        .on_press_maybe(if state.is_generating_pdf || state.is_parsing {
+            None
+        } else {
+            Some(Message::GenerateAll)
+        })
+        .padding(10),
+        button(if state.is_parsing {
+            "Parsing & Building Preview..."
+        } else {
+            "Parse & Preview Decklist"
+        })
+        .on_press_maybe(if state.is_parsing {
+            None
+        } else {
+            Some(Message::ParseDecklist)
+        })
+        .padding(10),
+        button("Clear Decklist")
+            .on_press(Message::ClearDecklist)
             .padding(10),
-            button("Clear Decklist")
-                .on_press(Message::ClearDecklist)
-                .padding(10),
-        ]
-        .spacing(10),
+        text("Face Mode:").size(14),
+        pick_list(
+            DoubleFaceMode::all(),
+            Some(state.double_face_mode.clone()),
+            Message::DoubleFaceModeChanged,
+        )
+        .width(Length::Fixed(120.0)),
     ]
     .spacing(10);
 
+    // Right side: Parsed cards display (aligned with input)
     let parsed_cards_section = if !state.parsed_cards.is_empty() {
-        let cards_list = scrollable(
-            column(
-                state
-                    .parsed_cards
-                    .iter()
-                    .map(|card| {
-                        let set_info = if let Some(set) = &card.set {
-                            format!(" • Set: {}", set.to_uppercase())
-                        } else {
-                            String::new()
-                        };
-                        let lang_info = if let Some(lang) = &card.lang {
-                            format!(" • Lang: {}", lang.to_uppercase())
-                        } else {
-                            String::new()
-                        };
-
-                        text(format!(
-                            "{}x {}{}{}",
-                            card.multiple, card.name, set_info, lang_info
-                        ))
-                        .size(14)
-                        .into()
-                    })
-                    .collect::<Vec<Element<Message>>>(),
-            )
-            .spacing(2),
-        )
-        .height(Length::Fixed(200.0));
-
         column![
-            row![
-                text(format!("Parsed Cards ({}):", state.parsed_cards.len())).size(16),
-                button(if state.is_building_preview {
-                    "Building Preview..."
-                } else {
-                    "Build Preview"
-                })
-                .on_press_maybe(if state.is_building_preview {
-                    None
-                } else {
-                    Some(Message::BuildGridPreview)
-                })
-                .padding(10),
-                button(if state.is_generating_pdf {
-                    "Generating PDF..."
-                } else {
-                    "Generate PDF"
-                })
-                .on_press_maybe(if state.is_generating_pdf {
-                    None
-                } else {
-                    Some(Message::GeneratePdf)
-                })
-                .padding(10),
-            ]
-            .spacing(10),
-            row![
-                text("Double-faced cards:").size(14),
-                pick_list(
-                    DoubleFaceMode::all(),
-                    Some(state.double_face_mode.clone()),
-                    Message::DoubleFaceModeChanged,
-                )
-                .width(Length::Fixed(150.0)),
-            ]
-            .spacing(10),
-            cards_list,
+            text(format!("Parsed Cards ({}):", state.parsed_cards.len())).size(16),
+            text_editor(&state.parsed_cards_aligned_text)
+                .height(Length::Fixed(400.0)), // Same height as input text field
         ]
         .spacing(10)
+        .width(Length::Fill)
     } else {
-        column![]
+        column![].width(Length::Fill)
     };
 
+    // Input section: side-by-side decklist input and parsed cards
+    let input_section = row![
+        decklist_input_section,
+        parsed_cards_section,
+    ]
+    .spacing(20);
+
+    // Combined top section: input + button row below
+    let top_section = column![
+        input_section,
+        button_row,
+    ]
+    .spacing(15);
+
     let pdf_status_section = if state.is_generating_pdf {
-        column![text("Generating PDF...").size(16),].spacing(5)
+        column![text("Generating PDF and opening save dialog...").size(16),].spacing(5)
     } else if let Some(pdf_data) = &state.generated_pdf {
         column![
-            row![
-                text("PDF Ready!").size(16),
-                button("Save PDF").on_press(Message::SavePdf).padding(10),
-            ]
-            .spacing(10),
+            text("PDF Generated!").size(16),
             text(format!("Size: {} KB", pdf_data.len() / 1024)).size(14),
         ]
         .spacing(5)
@@ -1297,8 +1367,7 @@ pub fn view(state: &AppState) -> Element<Message> {
     };
 
     let content = column![
-        decklist_section,
-        parsed_cards_section,
+        top_section,
         grid_preview_section,
         pdf_status_section,
         update_section,

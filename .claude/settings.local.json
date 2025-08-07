@@ -17,7 +17,8 @@
       "Bash(echo \"1. meld_result -> test_meld_card_parsing ✓\")",
       "Bash(echo:*)",
       "Bash(echo \"5. erayo -> test_flip_card_parsing ✓\")",
-      "WebFetch(domain:docs.rs)"
+      "WebFetch(domain:docs.rs)",
+      "Bash(cargo run:*)"
     ],
     "deny": []
   }
