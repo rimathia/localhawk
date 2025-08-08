@@ -1,6 +1,7 @@
 use regex::{Match, Regex};
 use std::collections::HashSet;
 use lazy_static::lazy_static;
+use crate::DoubleFaceMode;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DecklistEntry {
@@ -8,7 +9,8 @@ pub struct DecklistEntry {
     pub name: String,
     pub set: Option<String>,
     pub lang: Option<String>,
-    pub preferred_face: Option<crate::lookup::NameMatchMode>, // Track which face the user wanted
+    pub face_mode: DoubleFaceMode, // Fully resolved face mode (replaces preferred_face)
+    pub source_line_number: Option<usize>, // Which line in the original decklist this came from (0-indexed)
 }
 
 impl DecklistEntry {
@@ -18,7 +20,8 @@ impl DecklistEntry {
             name: name.to_string(),
             set: set.map(String::from),
             lang: lang.map(String::from),
-            preferred_face: None,
+            face_mode: DoubleFaceMode::BothSides, // Default to both sides for basic parsing
+            source_line_number: None,
         }
     }
 
@@ -28,7 +31,8 @@ impl DecklistEntry {
             name: n.to_string(),
             set: None,
             lang: None,
-            preferred_face: None,
+            face_mode: DoubleFaceMode::BothSides, // Default to both sides
+            source_line_number: None,
         }
     }
 
@@ -38,7 +42,8 @@ impl DecklistEntry {
             name: n.to_string(),
             set: None,
             lang: None,
-            preferred_face: None,
+            face_mode: DoubleFaceMode::BothSides, // Default to both sides
+            source_line_number: None,
         }
     }
 }
@@ -83,6 +88,13 @@ fn parse_set_and_lang(group: Option<Match>, languages: &HashSet<String>, set_cod
 }
 
 pub fn parse_line(line: &str, languages: &HashSet<String>, set_codes: &HashSet<String>) -> Option<DecklistEntry> {
+    let trimmed = line.trim();
+    
+    // Skip comment lines
+    if trimmed.starts_with("//") || trimmed.starts_with('#') {
+        return None;
+    }
+    
     lazy_static! {
         static ref REMNS: Regex =
             Regex::new(r"^\s*(\d*)\s*([^\(\[\$\t]*)[\s\(\[]*([\dA-Za-z]{2,6})?").unwrap();
@@ -105,7 +117,8 @@ pub fn parse_line(line: &str, languages: &HashSet<String>, set_codes: &HashSet<S
                     name,
                     set,
                     lang,
-                    preferred_face: None, // Will be set during name resolution
+                    face_mode: DoubleFaceMode::BothSides, // Default for basic parsing
+                    source_line_number: None, // Will be set by caller if needed
                 })
             }
         }
@@ -120,11 +133,22 @@ pub fn parse_decklist<'a>(
 ) -> Vec<ParsedDecklistLine<'a>> {
     decklist
         .lines()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| ParsedDecklistLine {
-            line: s,
-            entry: parse_line(s, languages, set_codes),
+        .enumerate() // Track line numbers (0-indexed)
+        .map(|(line_num, s)| (line_num, s.trim()))
+        .filter_map(|(line_num, s)| {
+            if s.is_empty() {
+                None // Skip empty lines but preserve line numbering
+            } else {
+                let mut entry = parse_line(s, languages, set_codes);
+                // Set the source line number if we successfully parsed the line
+                if let Some(ref mut e) = entry {
+                    e.source_line_number = Some(line_num);
+                }
+                Some(ParsedDecklistLine {
+                    line: s,
+                    entry,
+                })
+            }
         })
         .collect()
 }
@@ -214,30 +238,69 @@ mod tests {
         let expected = vec![
             ParsedDecklistLine {
                 line: "4  Beanstalk Giant   \t\t$0.25",
-                entry: Some(DecklistEntry::from_multiple_name(4, "Beanstalk Giant")),
+                entry: Some(DecklistEntry {
+                    multiple: 4,
+                    name: "Beanstalk Giant".to_string(),
+                    set: None,
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(0),
+                }),
             },
             ParsedDecklistLine {
                 line: "4  Lovestruck Beast   \t\t$1.5",
-                entry: Some(DecklistEntry::from_multiple_name(4, "Lovestruck Beast")),
+                entry: Some(DecklistEntry {
+                    multiple: 4,
+                    name: "Lovestruck Beast".to_string(),
+                    set: None,
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(1),
+                }),
             },
             ParsedDecklistLine {
                 line: "Artifact [5]",
-                entry: Some(DecklistEntry::from_multiple_name(1, "Artifact")),
+                entry: Some(DecklistEntry {
+                    multiple: 1,
+                    name: "Artifact".to_string(),
+                    set: None,
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(2),
+                }),
             },
             ParsedDecklistLine {
                 line: "1  The Great Henge   \t\t$25",
-                entry: Some(DecklistEntry::from_multiple_name(1, "The Great Henge")),
+                entry: Some(DecklistEntry {
+                    multiple: 1,
+                    name: "The Great Henge".to_string(),
+                    set: None,
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(3),
+                }),
             },
             ParsedDecklistLine {
                 line: "Instant [1]",
-                entry: Some(DecklistEntry::from_multiple_name(1, "Instant")),
+                entry: Some(DecklistEntry {
+                    multiple: 1,
+                    name: "Instant".to_string(),
+                    set: None,
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(4),
+                }),
             },
             ParsedDecklistLine {
                 line: "1  Incubation/Incongruity   \t\t---",
-                entry: Some(DecklistEntry::from_multiple_name(
-                    1,
-                    "Incubation/Incongruity",
-                )),
+                entry: Some(DecklistEntry {
+                    multiple: 1,
+                    name: "Incubation/Incongruity".to_string(),
+                    set: None,
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(5),
+                }),
             },
         ];
         for (left, right) in parsed.iter().zip(expected.iter()) {
@@ -258,22 +321,51 @@ mod tests {
             },
             ParsedDecklistLine {
                 line: "1 Bedeck // Bedazzle (RNA) 221",
-                entry: Some(DecklistEntry::new(
-                    1,
-                    "Bedeck // Bedazzle",
-                    Some("rna"),
-                    None,
-                )),
+                entry: Some(DecklistEntry {
+                    multiple: 1,
+                    name: "Bedeck // Bedazzle".to_string(),
+                    set: Some("rna".to_string()),
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(1),
+                }),
             },
             ParsedDecklistLine {
                 line: "1 Spawn of Mayhem (RNA) 85",
-                entry: Some(DecklistEntry::new(1, "Spawn of Mayhem", Some("rna"), None)),
+                entry: Some(DecklistEntry {
+                    multiple: 1,
+                    name: "Spawn of Mayhem".to_string(),
+                    set: Some("rna".to_string()),
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(2),
+                }),
             },
         ];
         let parsed = parse_decklist_default(decklist);
         for (left, right) in parsed.iter().zip(expected.iter()) {
             assert_eq!(left, right);
         }
+    }
+
+    #[test]
+    fn line_number_tracking() {
+        let decklist = "// Comment line\n2 Lightning Bolt\n\n1 Counterspell\n// Another comment\n3 Giant Growth";
+        let parsed = parse_decklist_default(decklist);
+        
+        
+        // Check that parsed entries have correct line numbers
+        let entries: Vec<&DecklistEntry> = parsed.iter().filter_map(|p| p.entry.as_ref()).collect();
+        
+        assert_eq!(entries.len(), 3);
+        assert_eq!(entries[0].name, "Lightning Bolt");
+        assert_eq!(entries[0].source_line_number, Some(1)); // Line "2 Lightning Bolt"
+        
+        assert_eq!(entries[1].name, "Counterspell"); 
+        assert_eq!(entries[1].source_line_number, Some(3)); // Line "1 Counterspell"
+        
+        assert_eq!(entries[2].name, "Giant Growth");
+        assert_eq!(entries[2].source_line_number, Some(5)); // Line "3 Giant Growth"
     }
 
     #[test]
@@ -286,11 +378,25 @@ mod tests {
             },
             ParsedDecklistLine {
                 line: "1 Defiant Strike (M21) 15",
-                entry: Some(DecklistEntry::new(1, "Defiant Strike", Some("m21"), None)),
+                entry: Some(DecklistEntry {
+                    multiple: 1,
+                    name: "Defiant Strike".to_string(),
+                    set: Some("m21".to_string()),
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(1),
+                }),
             },
             ParsedDecklistLine {
                 line: "24 Plains (ANB) 115",
-                entry: Some(DecklistEntry::new(24, "Plains", Some("anb"), None)),
+                entry: Some(DecklistEntry {
+                    multiple: 24,
+                    name: "Plains".to_string(),
+                    set: Some("anb".to_string()),
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(2),
+                }),
             },
             ParsedDecklistLine {
                 line: "Sideboard",
@@ -298,12 +404,14 @@ mod tests {
             },
             ParsedDecklistLine {
                 line: "2 Faerie Guidemother (ELD) 11",
-                entry: Some(DecklistEntry::new(
-                    2,
-                    "Faerie Guidemother",
-                    Some("eld"),
-                    None,
-                )),
+                entry: Some(DecklistEntry {
+                    multiple: 2,
+                    name: "Faerie Guidemother".to_string(),
+                    set: Some("eld".to_string()),
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides,
+                    source_line_number: Some(5),
+                }),
             },
         ];
         let parsed = parse_decklist_default(decklist);
@@ -346,7 +454,7 @@ mod tests {
                     assert_eq!(parsed.name, exp.name, "Name mismatch for: {}", input);
                     assert_eq!(parsed.set, exp.set, "Set mismatch for: {}", input);
                     assert_eq!(parsed.lang, exp.lang, "Language mismatch for: {}", input);
-                    assert_eq!(parsed.preferred_face, None, "Preferred face should be None for: {}", input);
+                    assert_eq!(parsed.face_mode, DoubleFaceMode::BothSides, "Face mode should be BothSides for: {}", input);
                 },
                 (None, None) => {}, // Both None, test passes
                 _ => panic!("Mismatch for input '{}': got {:?}, expected {:?}", input, result, expected),

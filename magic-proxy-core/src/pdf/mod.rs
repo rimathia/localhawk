@@ -1,6 +1,7 @@
 use printpdf::image_crate::DynamicImage;
 use printpdf::{Image, ImageTransform, Mm, PdfDocument};
 use crate::error::ProxyError;
+use crate::DoubleFaceMode;
 
 // Constants from MagicHawk
 pub const IMAGE_WIDTH: u32 = 480;
@@ -25,35 +26,6 @@ pub struct PdfOptions {
     pub double_face_mode: DoubleFaceMode,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum DoubleFaceMode {
-    /// Include only the front face of double-faced cards
-    FrontOnly,
-    /// Include only the back face of double-faced cards  
-    BackOnly,
-    /// Include both front and back faces as separate cards
-    BothSides,
-}
-
-impl std::fmt::Display for DoubleFaceMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            DoubleFaceMode::FrontOnly => write!(f, "Front face only"),
-            DoubleFaceMode::BackOnly => write!(f, "Back face only"),
-            DoubleFaceMode::BothSides => write!(f, "Both sides"),
-        }
-    }
-}
-
-impl DoubleFaceMode {
-    pub fn all() -> Vec<DoubleFaceMode> {
-        vec![
-            DoubleFaceMode::FrontOnly,
-            DoubleFaceMode::BackOnly,
-            DoubleFaceMode::BothSides,
-        ]
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum PageSize {

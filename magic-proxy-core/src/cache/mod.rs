@@ -323,9 +323,14 @@ mod tests {
     use super::*;
     use printpdf::image_crate::{DynamicImage, RgbImage};
 
-    fn create_test_image() -> DynamicImage {
+    fn create_test_image() -> Vec<u8> {
         let img = RgbImage::new(100, 100);
-        DynamicImage::ImageRgb8(img)
+        let dynamic_img = DynamicImage::ImageRgb8(img);
+        
+        // Convert to JPEG bytes
+        let mut bytes: Vec<u8> = Vec::new();
+        dynamic_img.write_to(&mut std::io::Cursor::new(&mut bytes), printpdf::image_crate::ImageFormat::Jpeg).unwrap();
+        bytes
     }
     
     fn create_test_cache() -> Result<ImageCache, ProxyError> {
@@ -340,7 +345,7 @@ mod tests {
         let test_image = create_test_image();
 
         // Test insertion and retrieval
-        cache.insert(test_url.to_string(), test_image.clone()).unwrap();
+        cache.insert(test_url.to_string(), test_image).unwrap();
         assert_eq!(cache.size(), 1);
         assert!(cache.contains(test_url));
 

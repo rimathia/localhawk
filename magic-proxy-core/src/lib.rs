@@ -13,6 +13,37 @@ pub use cache::ImageCache;
 pub use card_name_cache::CardNameCache;
 pub use search_results_cache::SearchResultsCache;
 pub use set_codes_cache::SetCodesCache;
+
+/// Face mode for double-faced cards - moved from pdf module as it's used throughout the codebase
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DoubleFaceMode {
+    /// Include only the front face of double-faced cards
+    FrontOnly,
+    /// Include only the back face of double-faced cards  
+    BackOnly,
+    /// Include both front and back faces as separate cards
+    BothSides,
+}
+
+impl std::fmt::Display for DoubleFaceMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DoubleFaceMode::FrontOnly => write!(f, "Front face only"),
+            DoubleFaceMode::BackOnly => write!(f, "Back face only"),
+            DoubleFaceMode::BothSides => write!(f, "Both sides"),
+        }
+    }
+}
+
+impl DoubleFaceMode {
+    pub fn all() -> Vec<DoubleFaceMode> {
+        vec![
+            DoubleFaceMode::FrontOnly,
+            DoubleFaceMode::BackOnly,
+            DoubleFaceMode::BothSides,
+        ]
+    }
+}
 pub use decklist::{DecklistEntry, ParsedDecklistLine, parse_decklist, parse_line};
 pub use error::ProxyError;
 pub use globals::{
@@ -22,7 +53,7 @@ pub use globals::{
     get_card_name_cache_info_ref,
 };
 pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};
-pub use pdf::{PageSize, PdfOptions, DoubleFaceMode, generate_pdf};
+pub use pdf::{PageSize, PdfOptions, generate_pdf};
 pub use scryfall::{
     Card, CardSearchResult, ScryfallCardNames, ScryfallClient,
     models::{get_minimal_scryfall_languages, ScryfallSetCodes},
@@ -61,9 +92,10 @@ impl ProxyGenerator {
         find_card_name(name)
     }
 
-    /// Parse a decklist and resolve card names using fuzzy matching
+    /// Parse a decklist and resolve card names using fuzzy matching with global face mode
     pub async fn parse_and_resolve_decklist(
         decklist_text: &str,
+        global_face_mode: DoubleFaceMode,
     ) -> Result<Vec<DecklistEntry>, ProxyError> {
         use scryfall::models::get_minimal_scryfall_languages;
 
@@ -94,9 +126,20 @@ impl ProxyGenerator {
                 if let Some(lookup_result) = find_card_name(&entry.name) {
                     log::debug!("Name resolution: '{}' -> '{}' (face mode: {:?})", entry.name, lookup_result.name, lookup_result.hit);
                     entry.name = lookup_result.name;
-                    entry.preferred_face = Some(lookup_result.hit); // Store which face was matched
+                    // Apply face mode resolution logic (matches MagicHawk logic)
+                    entry.face_mode = match lookup_result.hit {
+                        crate::lookup::NameMatchMode::Part(1) => {
+                            log::debug!("Back face input detected, using BackOnly mode");
+                            DoubleFaceMode::BackOnly // Back face: always back only
+                        }
+                        _ => {
+                            log::debug!("Front face or full name input, using global setting: {:?}", global_face_mode);
+                            global_face_mode.clone() // Front face or full name: use global setting
+                        }
+                    };
                 } else {
-                    log::debug!("Name resolution: '{}' -> no match found", entry.name);
+                    log::debug!("Name resolution: '{}' -> no match found, using global setting", entry.name);
+                    entry.face_mode = global_face_mode.clone(); // No match: use global setting
                 }
                 resolved_entries.push(entry);
             }
@@ -104,7 +147,7 @@ impl ProxyGenerator {
 
         log::debug!("Final resolved decklist: {} entries", resolved_entries.len());
         for entry in &resolved_entries {
-            log::debug!("  -> {}x '{}' [set: {:?}, lang: {:?}, preferred_face: {:?}]", entry.multiple, entry.name, entry.set, entry.lang, entry.preferred_face);
+            log::debug!("  -> {}x '{}' [set: {:?}, lang: {:?}, face_mode: {:?}]", entry.multiple, entry.name, entry.set, entry.lang, entry.face_mode);
         }
         Ok(resolved_entries)
     }
@@ -192,6 +235,33 @@ impl ProxyGenerator {
 
         // Generate PDF
         generate_pdf(images.into_iter(), options)
+    }
+
+    /// Get the image URLs that should be used for a given card and face mode
+    /// This is the core logic extracted from PDF generation for reuse in grid preview
+    pub fn get_image_urls_for_face_mode(card: &Card, face_mode: &DoubleFaceMode) -> Vec<String> {
+        match face_mode {
+            DoubleFaceMode::FrontOnly => {
+                // Always include front face
+                vec![card.border_crop.clone()]
+            }
+            DoubleFaceMode::BackOnly => {
+                // Include back face if it exists, otherwise front face
+                if let Some(back_url) = &card.border_crop_back {
+                    vec![back_url.clone()]
+                } else {
+                    vec![card.border_crop.clone()]
+                }
+            }
+            DoubleFaceMode::BothSides => {
+                // Include front face and back face if it exists
+                let mut urls = vec![card.border_crop.clone()];
+                if let Some(back_url) = &card.border_crop_back {
+                    urls.push(back_url.clone());
+                }
+                urls
+            }
+        }
     }
 
     /// Generate PDF from a list of cards with per-card face mode (static method using global state)
@@ -520,5 +590,88 @@ mod tests {
                 hit: NameMatchMode::Part(1)
             })
         );
+    }
+
+    #[test]
+    fn test_parse_and_resolve_decklist_face_preferences() {
+        // Create a minimal card names lookup with just the cards we need for testing
+        let test_card_names = vec![
+            "Kabira Takedown // Kabira Plateau".to_string(),
+            "Cut // Ribbons".to_string(),
+        ];
+        let lookup = CardNameLookup::from_card_names(&test_card_names);
+        
+        // Test ALL double face modes to ensure proper resolution
+        let test_global_modes = [
+            DoubleFaceMode::FrontOnly,
+            DoubleFaceMode::BackOnly,
+            DoubleFaceMode::BothSides,
+        ];
+        
+        for global_mode in test_global_modes {
+            let decklist_inputs = [
+                "kabira takedown",    // Should match front face of DFC → use global setting
+                "kabira plateau",     // Should match back face of DFC → always BackOnly
+                "cut // ribbons",     // Should match full split card name → use global setting
+                "cut",                // Should match first part of split card → use global setting  
+                "ribbons",            // Should match second part of split card → always BackOnly
+            ];
+            
+            let mut entries = Vec::new();
+            
+            for (i, input) in decklist_inputs.iter().enumerate() {
+                // Simulate what the new parse_and_resolve_decklist does
+                let mut entry = DecklistEntry {
+                    multiple: 1,
+                    name: input.to_string(),
+                    set: None,
+                    lang: None,
+                    face_mode: DoubleFaceMode::BothSides, // Default before resolution
+                    source_line_number: Some(i),
+                };
+                
+                // Apply the same logic as in the updated parse_and_resolve_decklist
+                if let Some(lookup_result) = lookup.find(input) {
+                    entry.name = lookup_result.name;
+                    // Apply face mode resolution logic (matches MagicHawk logic)
+                    entry.face_mode = match lookup_result.hit {
+                        NameMatchMode::Part(1) => DoubleFaceMode::BackOnly, // Back face: always back only
+                        _ => global_mode.clone(), // Front face or full name: use global setting
+                    };
+                } else {
+                    entry.face_mode = global_mode.clone(); // No match: use global setting
+                }
+                
+                entries.push(entry);
+            }
+            
+            assert_eq!(entries.len(), 5, "Should process 5 entries");
+
+            // Verify the face mode resolution for each entry
+            let kabira_takedown = &entries[0];
+            assert_eq!(kabira_takedown.name.to_lowercase(), "kabira takedown // kabira plateau");
+            assert_eq!(kabira_takedown.face_mode, global_mode, 
+                "Front face input should use global setting: {:?}", global_mode);
+
+            let kabira_plateau = &entries[1];
+            assert_eq!(kabira_plateau.name.to_lowercase(), "kabira takedown // kabira plateau");
+            assert_eq!(kabira_plateau.face_mode, DoubleFaceMode::BackOnly, 
+                "Back face input should always use BackOnly regardless of global setting");
+
+            let cut_ribbons_full = &entries[2];
+            assert_eq!(cut_ribbons_full.name.to_lowercase(), "cut // ribbons");
+            assert_eq!(cut_ribbons_full.face_mode, global_mode, 
+                "Full split card name should use global setting: {:?}", global_mode);
+
+            let cut_front = &entries[3];
+            assert_eq!(cut_front.name.to_lowercase(), "cut // ribbons");
+            assert_eq!(cut_front.face_mode, global_mode, 
+                "First part of split card should use global setting: {:?}", global_mode);
+
+            let ribbons_back = &entries[4];
+            assert_eq!(ribbons_back.name.to_lowercase(), "cut // ribbons");
+            assert_eq!(ribbons_back.face_mode, DoubleFaceMode::BackOnly, 
+                "Second part input should always use BackOnly regardless of global setting");
+        }
     }
 }

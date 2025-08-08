@@ -103,7 +103,8 @@ pub struct DecklistEntry {
     pub name: String,
     pub set: Option<String>,           // Parsed from [SET] notation
     pub lang: Option<String>,          // Parsed from [LANG] notation  
-    pub preferred_face: Option<NameMatchMode>, // Tracks which face was matched
+    pub face_mode: DoubleFaceMode,     // Fully resolved face preference (replaced preferred_face)
+    pub source_line_number: Option<usize>, // Line number in original decklist for debugging
 }
 ```
 
@@ -134,6 +135,51 @@ pub enum DoubleFaceMode {
 - **Full card name** (e.g., "cut // ribbons") → Uses global `DoubleFaceMode` setting
 
 This allows users to mix entries in the same decklist where some should show both faces and others should show only specific faces.
+
+## Architecture: Single-Source-of-Truth for Face Mode Resolution
+
+### Problem Solved
+The application previously had a potential inconsistency where the grid preview and PDF generation could show different results for double-faced cards. This occurred because face preferences were resolved at different times and potentially with different logic.
+
+### Solution: Parse-Time Resolution
+The architecture now uses a **single-source-of-truth** approach:
+
+1. **Parse-Time Resolution**: Face preferences are fully resolved during `parse_and_resolve_decklist()` and stored in `DecklistEntry.face_mode`
+2. **Global Face Mode Input**: The parsing function accepts the current global face mode setting as a parameter
+3. **Consistent Application**: Both grid preview and PDF generation use the same resolved face modes
+
+### API Changes
+```rust
+// NEW: Takes global face mode as parameter and resolves face preferences immediately
+pub async fn parse_and_resolve_decklist(
+    decklist_text: &str,
+    global_face_mode: DoubleFaceMode,
+) -> Result<Vec<DecklistEntry>, ProxyError>
+
+// Each DecklistEntry now contains fully resolved face mode
+pub struct DecklistEntry {
+    // ... other fields ...
+    pub face_mode: DoubleFaceMode,  // Resolved during parsing
+}
+```
+
+### Face Mode Resolution Logic
+Applied during parsing in `parse_and_resolve_decklist()`:
+- **Back face input** (`Part(1)` from fuzzy matching) → Always `BackOnly` (overrides global)
+- **Front face input** or **full card name** → Uses the provided global face mode
+- **No match found** → Uses the provided global face mode
+
+### Shared Logic for Consistency
+```rust
+// Shared helper function used by both grid preview and PDF generation
+pub fn get_image_urls_for_face_mode(card: &Card, face_mode: &DoubleFaceMode) -> Vec<String>
+```
+
+This ensures that:
+- Grid preview shows exactly what the PDF will contain
+- No timing issues with changing global settings after parsing
+- Single implementation of face mode logic eliminates duplication
+- PDF generation logic remains unchanged (minimal regression risk)
 
 ## Cache System
 
@@ -275,9 +321,10 @@ use magic_proxy_core::{ProxyGenerator, PdfOptions, DoubleFaceMode, initialize_ca
 // Initialize caches at startup (required)
 initialize_caches().await?;
 
-// Parse decklist with intelligent face detection
+// Parse decklist with intelligent face detection (requires global face mode)
 let decklist = "1 kabira takedown\n1 kabira plateau\n1 cut // ribbons";
-let entries = ProxyGenerator::parse_and_resolve_decklist(decklist).await?;
+let global_face_mode = DoubleFaceMode::BothSides;
+let entries = ProxyGenerator::parse_and_resolve_decklist(decklist, global_face_mode).await?;
 
 // Generate PDF with per-card face modes
 let cards: Vec<(Card, u32, DoubleFaceMode)> = /* ... build from entries ... */;
@@ -298,10 +345,21 @@ shutdown_caches().await?;
 ## Important Notes
 
 ### Testing
-- **Unit tests**: 42 tests passing, comprehensive coverage of all functionality
+- **Unit tests**: 45+ tests passing, comprehensive coverage of all functionality
+- **Face Mode Resolution Testing**: Complete test coverage ensuring architecture consistency
+  - Tests all three face modes (`FrontOnly`, `BackOnly`, `BothSides`) with MagicHawk logic
+  - Verifies back face input (`Part(1)`) always forces `BackOnly` regardless of global setting
+  - Confirms front face and full name inputs use global face mode setting
+  - Uses controlled card name data to avoid external dependencies
+- **Self-contained requirement**: All unit tests MUST be self-contained and executable in restrictive CI environments
+  - No network calls (use mocked data instead of real Scryfall API calls)
+  - No external dependencies or services
+  - Deterministic results (not dependent on changing external data)
+  - Fast execution (tests complete in milliseconds, not seconds)
 - **Cache persistence test**: Disabled (`#[ignore]`) due to file system dependencies
   - TODO: Refactor to use dependency injection with in-memory storage for unit tests
   - Consider moving file system tests to integration tests
+- **Integration tests**: None implemented yet, but may be added later for end-to-end testing with real external services
 
 ### Decklist Parsing
 - **Set codes**: Supports 2-6 character codes (regex: `[\dA-Za-z]{2,6}`)
@@ -490,6 +548,29 @@ Users can still use the traditional workflow (skip preview) or take advantage of
 - **Performance optimized**: Reuses cached images and search results
 - **Scalable design**: Handles large decklists with efficient pagination
 - **User-centric**: Intuitive entry-based grouping matches user mental model
+
+## Recent Architecture Improvements (2025-08-08)
+
+### Single-Source-of-Truth Implementation ✅
+Successfully resolved potential inconsistency between grid preview and PDF generation through architectural changes:
+
+#### Key Changes Made:
+1. **Evolved `DecklistEntry` Structure**: Replaced `preferred_face: Option<NameMatchMode>` with `face_mode: DoubleFaceMode` for fully resolved face preferences
+2. **Updated Core API**: `parse_and_resolve_decklist()` now accepts global face mode parameter and resolves preferences at parse time
+3. **Shared Helper Function**: Created `get_image_urls_for_face_mode()` for consistent face mode logic between components
+4. **Grid Preview Accuracy**: Updated grid generation to use same logic as PDF generation, ensuring identical results
+
+#### Benefits Achieved:
+- **Consistency Guarantee**: Grid preview and PDF generation now show identical results
+- **No Timing Issues**: Face preferences resolved once during parsing, immune to subsequent global setting changes  
+- **Clean Architecture**: Single implementation of face mode logic eliminates code duplication
+- **Risk Mitigation**: PDF generation logic preserved unchanged to avoid regressions
+- **Comprehensive Testing**: All face mode combinations verified with unit tests
+
+#### Compatibility:
+- **Breaking Change**: `parse_and_resolve_decklist()` signature updated to require global face mode parameter
+- **Migration**: GUI updated to pass current face mode setting during parsing
+- **Backwards Compatibility**: All other APIs remain unchanged
 
 ### Future Enhancements
 
