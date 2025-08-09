@@ -751,10 +751,11 @@ pub fn view(state: &AppState) -> Element<Message> {
         text_editor(&state.decklist_content)
             .on_action(Message::DecklistAction)
             .height(Length::Fixed(400.0))
-            .width(400.0), // Fixed width for typical decklist entries
+            .width(600.0) // Increased width to accommodate longer parsed entries
+            .font(iced::Font::MONOSPACE), // Use monospace font for better alignment with parsed output
     ]
     .spacing(10)
-    .width(Length::Fixed(450.0)); // Container width slightly larger than text field
+    .width(Length::Fixed(650.0)); // Container width slightly larger than text field
 
     // Button row: independent width for proper spacing
     let button_row = row![
@@ -793,20 +794,67 @@ pub fn view(state: &AppState) -> Element<Message> {
     ]
     .spacing(10);
 
-    // Right side: Parsed cards display (aligned with input)
+    // Right side: Parsed cards display (aligned with input) - using text widget for display-only content
     let parsed_cards_section = if !state.parsed_cards.is_empty() {
+        let parsed_text = state.parsed_cards_aligned_text.text();
         column![
-            text(format!("Parsed Cards ({}):", state.parsed_cards.len())).size(16),
-            text_editor(&state.parsed_cards_aligned_text).height(Length::Fixed(400.0)), // Same height as input text field
+            text(format!("Parsed Cards ({}):", state.parsed_cards.len())).size(18),
+            text("Resolved names, sets, languages, and face modes:").size(14),
+            // Container styled to match text_editor appearance but using text widget to avoid greyed-out look
+            container(
+                scrollable(
+                    text(parsed_text)
+                        .font(iced::Font::MONOSPACE)  // Use monospace font for better alignment
+                        .size(16)
+                        .line_height(iced::widget::text::LineHeight::Absolute(iced::Pixels(20.0))) // Match text_editor line height
+                )
+                .height(Length::Fill)
+            )
+            .style(|_theme| container::Style {
+                background: Some(iced::Color::WHITE.into()),
+                border: iced::Border {
+                    color: iced::Color::from_rgb(0.5, 0.5, 0.5),
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            })
+            .padding(8)
+            .height(Length::Fixed(400.0))
+            .width(600.0), // Same width as input text field
         ]
         .spacing(10)
-        .width(Length::Fill)
+        .width(Length::Fixed(650.0)) // Same container width as input section
     } else {
-        column![].width(Length::Fill)
+        column![
+            text("Parsed Cards:").size(18),
+            text("Resolved cards will appear here after parsing:").size(14),
+            // Empty placeholder with same styling
+            container(
+                text("Resolved cards will appear here after parsing...")
+                    .font(iced::Font::MONOSPACE)
+                    .size(14)
+                    .color(iced::Color::from_rgb(0.6, 0.6, 0.6))
+            )
+            .style(|_theme| container::Style {
+                background: Some(iced::Color::from_rgb(0.98, 0.98, 0.98).into()),
+                border: iced::Border {
+                    color: iced::Color::from_rgb(0.5, 0.5, 0.5),
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            })
+            .padding(8)
+            .height(Length::Fixed(400.0))
+            .width(600.0),
+        ]
+        .spacing(10)
+        .width(Length::Fixed(650.0)) // Same container width as input section
     };
 
-    // Input section: side-by-side decklist input and parsed cards
-    let input_section = row![decklist_input_section, parsed_cards_section,].spacing(20);
+    // Input section: side-by-side decklist input and parsed cards with minimal gap for visual alignment
+    let input_section = row![decklist_input_section, parsed_cards_section,].spacing(5);
 
     // Combined top section: input + button row below
     let top_section = column![input_section, button_row,].spacing(15);
