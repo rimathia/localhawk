@@ -28,8 +28,8 @@ pub struct PaginatedCardGrid {
     pub current_page: usize,
     pub total_items: usize,
     pub items_per_page: usize,
-    pub _grid_columns: usize,  // Keep for potential future use
-    pub _grid_rows: usize,     // Keep for potential future use
+    pub _grid_columns: usize, // Keep for potential future use
+    pub _grid_rows: usize,    // Keep for potential future use
 }
 
 impl PaginatedCardGrid {
@@ -330,7 +330,7 @@ impl AppState {
         Self {
             display_text: "Welcome to Magic Card Proxy Generator!\nParsing includes fuzzy matching, set/language awareness, and card name resolution.".to_string(),
             decklist_content: text_editor::Content::with_text(
-                "\n2 Black Lotus [VMA]\n1 Counterspell [7ED]\n// comments are ignored\n1 Memory Lapse [ja]\n1 kabira takedown\n1 kabira plateau\n1 cut // ribbons (pakh)",
+                "\n1 Counterspell [7ED]\n// comments are ignored\n1 Memory Lapse [ja]\n1 kabira takedown\n1 kabira plateau\n1 cut // ribbons (pakh)\n1 Gisela, the Broken Blade\n1 Bruna, the Fading Light",
             ),
             parsed_cards: Vec::new(),
             parsed_cards_aligned_text: text_editor::Content::new(),
@@ -451,13 +451,12 @@ fn build_aligned_parsed_output(input_text: &str, parsed_cards: &[DecklistEntry])
 pub struct GridImage {
     pub entry_index: usize,      // Which decklist entry this came from
     pub copy_number: usize,      // Which copy of that entry (0-based)
-    pub _image_index: usize,      // Which image within that copy (for double-faced cards) - keep for future use
-    pub _card: Card,              // The actual card - keep for future use
-    pub image_url: String,       // The URL of the image to display
-    pub page: usize,             // Which page this appears on
+    pub _image_index: usize, // Which image within that copy (for double-faced cards) - keep for future use
+    pub _card: Card,         // The actual card - keep for future use
+    pub image_url: String,   // The URL of the image to display
+    pub page: usize,         // Which page this appears on
     pub position_in_page: usize, // Position within the 3x3 grid (0-8)
 }
-
 
 /// Build grid preview using the exact same logic as PDF generation
 async fn build_grid_preview_from_entries(
