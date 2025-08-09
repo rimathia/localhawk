@@ -3,9 +3,9 @@ use iced::widget::{
 };
 use iced::{Element, Length, Task, Theme};
 use magic_proxy_core::{
-    Card, DecklistEntry, DoubleFaceMode, PdfOptions, ProxyGenerator,
-    get_cached_image_bytes, get_card_name_cache_info, get_image_cache_info, force_update_card_lookup,
-    start_background_image_loading, BackgroundLoadHandle, BackgroundLoadProgress, LoadingPhase,
+    BackgroundLoadHandle, BackgroundLoadProgress, Card, DecklistEntry, DoubleFaceMode,
+    LoadingPhase, PdfOptions, ProxyGenerator, force_update_card_lookup, get_cached_image_bytes,
+    get_card_name_cache_info, get_image_cache_info, start_background_image_loading,
 };
 use rfd::AsyncFileDialog;
 
@@ -13,12 +13,14 @@ use rfd::AsyncFileDialog;
 const GRID_CARD_WIDTH: f32 = 200.0;
 const GRID_CARD_HEIGHT: f32 = 283.3; // 200.0 / 0.7058823529 ≈ 283.3
 
-// Constants for print selection modal thumbnail dimensions (maintaining same aspect ratio)
-const THUMBNAIL_WIDTH: f32 = 80.0;
-const THUMBNAIL_HEIGHT: f32 = 113.3; // 80.0 / 0.7058823529 ≈ 113.3
+// Constants for print selection modal thumbnail dimensions (same size as main grid for consistency)
+const THUMBNAIL_WIDTH: f32 = GRID_CARD_WIDTH;
+const THUMBNAIL_HEIGHT: f32 = GRID_CARD_HEIGHT;
 
-// Constants for print selection modal pagination
-const PRINTS_PER_PAGE: usize = 12; // 3x4 grid of thumbnails per page
+// Constants for print selection modal grid dimensions
+const PRINT_SELECTION_COLUMNS: usize = 5;
+const PRINT_SELECTION_ROWS: usize = 3;
+const PRINTS_PER_PAGE: usize = PRINT_SELECTION_COLUMNS * PRINT_SELECTION_ROWS;
 
 /// Reusable paginated card grid component
 #[derive(Debug, Clone)]
@@ -31,13 +33,18 @@ pub struct PaginatedCardGrid {
 }
 
 impl PaginatedCardGrid {
-    pub fn new(total_items: usize, items_per_page: usize, grid_columns: usize, grid_rows: usize) -> Self {
+    pub fn new(
+        total_items: usize,
+        items_per_page: usize,
+        grid_columns: usize,
+        grid_rows: usize,
+    ) -> Self {
         let total_pages = if total_items == 0 {
             1
         } else {
             (total_items + items_per_page - 1) / items_per_page // Ceiling division
         };
-        
+
         Self {
             current_page: 0,
             total_items,
@@ -82,7 +89,11 @@ impl PaginatedCardGrid {
     }
 
     /// Create navigation controls for the paginated grid
-    pub fn create_navigation_controls<'a>(&self, prev_message: Message, next_message: Message) -> Element<'a, Message> {
+    pub fn create_navigation_controls<'a>(
+        &self,
+        prev_message: Message,
+        next_message: Message,
+    ) -> Element<'a, Message> {
         if self.total_pages() <= 1 {
             // No navigation needed for single page
             return row![].into();
@@ -250,7 +261,6 @@ pub enum PreviewMode {
     PrintSelection, // Modal for selecting prints
 }
 
-
 #[derive(Debug, Clone)]
 pub enum Message {
     DecklistAction(text_editor::Action),
@@ -280,7 +290,7 @@ pub enum Message {
         print_index: usize,
     },
     ClosePrintSelection,
-    
+
     // Print selection pagination
     PrintSelectionPrevPage,
     PrintSelectionNextPage,
@@ -351,7 +361,7 @@ impl AppState {
 /// considering its face mode and whether the card has a back face
 fn calculate_actual_card_count(entry: &DecklistEntry, card: &Card) -> usize {
     let base_count = entry.multiple as usize;
-    
+
     match entry.face_mode {
         DoubleFaceMode::FrontOnly => {
             // Always 1 image per copy (front only)
@@ -464,7 +474,7 @@ async fn build_grid_preview_from_entries(
 ) -> Result<GridPreview, String> {
     let mut all_images = Vec::new();
     let mut card_position = 0;
-    
+
     // Store search results to avoid duplicate API calls
     let mut search_results = Vec::new();
 
@@ -482,12 +492,18 @@ async fn build_grid_preview_from_entries(
             Ok(result) => result,
             Err(e) => {
                 log::warn!("Failed to search for card '{}': {}", decklist_entry.name, e);
-                return Err(format!("Failed to search for card '{}': {}", decklist_entry.name, e));
+                return Err(format!(
+                    "Failed to search for card '{}': {}",
+                    decklist_entry.name, e
+                ));
             }
         };
 
         if search_result.cards.is_empty() {
-            return Err(format!("No printings found for card '{}'", decklist_entry.name));
+            return Err(format!(
+                "No printings found for card '{}'",
+                decklist_entry.name
+            ));
         }
 
         // Store search result for later reuse
@@ -502,7 +518,10 @@ async fn build_grid_preview_from_entries(
         let card = match selected_card {
             Some(card) => card,
             None => {
-                return Err(format!("No suitable card found for entry '{}'", decklist_entry.name));
+                return Err(format!(
+                    "No suitable card found for entry '{}'",
+                    decklist_entry.name
+                ));
             }
         };
 
@@ -517,8 +536,9 @@ async fn build_grid_preview_from_entries(
 
         // Generate the actual images based on face mode - using the SAME logic as PDF generation
         for copy_number in 0..decklist_entry.multiple {
-            let image_urls = ProxyGenerator::get_image_urls_for_face_mode(&card, &decklist_entry.face_mode);
-            
+            let image_urls =
+                ProxyGenerator::get_image_urls_for_face_mode(&card, &decklist_entry.face_mode);
+
             for (image_index, image_url) in image_urls.into_iter().enumerate() {
                 let page = card_position / 9; // 9 cards per page
                 let position_in_page = card_position % 9;
@@ -692,33 +712,45 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 if let Some(progress) = handle.try_get_progress() {
                     log::debug!("Background progress update: {:?}", progress);
                     state.latest_background_progress = Some(progress.clone());
-                    
+
                     // Update display text with progress
                     let progress_text = match progress.phase {
                         LoadingPhase::Selected => {
-                            format!("Loading selected images: {}/{} entries, {} images cached...", 
-                                progress.current_entry, progress.total_entries, progress.selected_loaded)
+                            format!(
+                                "Loading selected images: {}/{} entries, {} images cached...",
+                                progress.current_entry,
+                                progress.total_entries,
+                                progress.selected_loaded
+                            )
                         }
                         LoadingPhase::Alternatives => {
-                            format!("Loading alternative images: {}/{} alternatives cached...", 
-                                progress.alternatives_loaded, progress.total_alternatives)
+                            format!(
+                                "Loading alternative images: {}/{} alternatives cached...",
+                                progress.alternatives_loaded, progress.total_alternatives
+                            )
                         }
                         LoadingPhase::Completed => {
-                            format!("All images loaded! {} selected + {} alternatives = {} total images.", 
-                                progress.selected_loaded, progress.alternatives_loaded, 
-                                progress.selected_loaded + progress.alternatives_loaded)
+                            format!(
+                                "All images loaded! {} selected + {} alternatives = {} total images.",
+                                progress.selected_loaded,
+                                progress.alternatives_loaded,
+                                progress.selected_loaded + progress.alternatives_loaded
+                            )
                         }
                     };
                     state.display_text = progress_text;
-                    
+
                     // Show any errors
                     if !progress.errors.is_empty() {
-                        let error_msg = format!("Loading completed with {} error(s): {}", 
-                            progress.errors.len(), progress.errors.join("; "));
+                        let error_msg = format!(
+                            "Loading completed with {} error(s): {}",
+                            progress.errors.len(),
+                            progress.errors.join("; ")
+                        );
                         state.error_message = Some(error_msg);
                     }
                 }
-                
+
                 // Check if loading is finished
                 if handle.is_finished() {
                     log::debug!("Background loading task finished");
@@ -726,8 +758,10 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 } else {
                     // Continue polling
                     return Task::perform(
-                        async { tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; },
-                        |_| Message::PollBackgroundProgress
+                        async {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                        },
+                        |_| Message::PollBackgroundProgress,
                     );
                 }
             }
@@ -786,22 +820,25 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if let Some(ref mut grid_preview) = state.grid_preview {
                 if entry_index < grid_preview.entries.len() {
                     grid_preview.selected_entry_index = Some(entry_index);
-                    
+
                     // Initialize pagination grid for print selection
                     let entry = &grid_preview.entries[entry_index];
                     let total_printings = entry.available_printings.len();
                     grid_preview.print_selection_grid = Some(PaginatedCardGrid::new(
                         total_printings,
                         PRINTS_PER_PAGE,
-                        3, // 3 columns
-                        4, // 4 rows
+                        PRINT_SELECTION_COLUMNS,
+                        PRINT_SELECTION_ROWS,
                     ));
-                    
+
                     state.preview_mode = PreviewMode::PrintSelection;
                 }
             }
         }
-        Message::SelectPrint { entry_index, print_index } => {
+        Message::SelectPrint {
+            entry_index,
+            print_index,
+        } => {
             if let Some(ref mut grid_preview) = state.grid_preview {
                 if let Some(entry) = grid_preview.entries.get_mut(entry_index) {
                     entry.set_selected_printing(print_index);
@@ -819,17 +856,14 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                             entry.decklist_entry.name,
                             state.parsed_cards.len()
                         );
-                        
+
                         for parsed in &state.parsed_cards {
-                            log::debug!(
-                                "  Parsed entry: '{}'",
-                                parsed.name
-                            );
+                            log::debug!("  Parsed entry: '{}'", parsed.name);
                         }
-                        
+
                         if let Some(parsed_entry) = state.parsed_cards.iter_mut().find(|parsed| {
-                            parsed.name.to_lowercase() == entry.decklist_entry.name.to_lowercase() &&
-                            parsed.face_mode == entry.decklist_entry.face_mode
+                            parsed.name.to_lowercase() == entry.decklist_entry.name.to_lowercase()
+                                && parsed.face_mode == entry.decklist_entry.face_mode
                         }) {
                             // Update the parsed entry with the selected printing's set and language
                             parsed_entry.set = Some(selected_card.set.clone());
@@ -888,7 +922,7 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             state.parsed_cards_aligned_text = text_editor::Content::new();
             state.error_message = None;
             state.display_text = "Decklist cleared!".to_string();
-            
+
             // Clear preview and navigation state
             state.grid_preview = None;
             state.page_navigation = None;
@@ -1172,7 +1206,7 @@ pub fn view(state: &AppState) -> Element<Message> {
             container(
                 scrollable(
                     text(parsed_text)
-                        .font(iced::Font::MONOSPACE)  // Use monospace font for better alignment
+                        .font(iced::Font::MONOSPACE) // Use monospace font for better alignment
                         .size(16)
                         .line_height(iced::widget::text::LineHeight::Absolute(iced::Pixels(20.0))) // Match text_editor line height
                 )
@@ -1290,7 +1324,7 @@ pub fn view(state: &AppState) -> Element<Message> {
         match state.preview_mode {
             PreviewMode::GridPreview | PreviewMode::Hidden => {
                 // Always show 3x3 grid layout - Default mode (both GridPreview and Hidden show grid)
-                
+
                 // Page navigation controls (only show if we have parsed cards and multiple pages)
                 let page_nav = if let Some(ref grid_preview) = state.grid_preview {
                     if let Some(ref page_navigation) = state.page_navigation {
@@ -1342,19 +1376,22 @@ pub fn view(state: &AppState) -> Element<Message> {
                             current_positions.get(position_idx)
                         {
                             // Try to get cached image, fallback to text if not available
-                            let card_widget = if let Some(selected_card) = entry.get_selected_card() {
+                            let card_widget = if let Some(selected_card) = entry.get_selected_card()
+                            {
                                 // Get all image URLs that would be generated for this entry's face mode
                                 let image_urls = ProxyGenerator::get_image_urls_for_face_mode(
-                                    selected_card, 
-                                    &entry.decklist_entry.face_mode
+                                    selected_card,
+                                    &entry.decklist_entry.face_mode,
                                 );
-                                
+
                                 // Find which copy and which image within that copy this position represents
                                 let images_per_copy = image_urls.len();
-                                let total_images_for_entry = entry.decklist_entry.multiple as usize * images_per_copy;
-                                
+                                let total_images_for_entry =
+                                    entry.decklist_entry.multiple as usize * images_per_copy;
+
                                 // Find the position of this grid slot relative to this entry's images
-                                let entry_positions: Vec<&GridPosition> = entry.grid_positions
+                                let entry_positions: Vec<&GridPosition> = entry
+                                    .grid_positions
                                     .iter()
                                     .filter(|pos| {
                                         if let Some(ref grid_preview) = state.grid_preview {
@@ -1364,15 +1401,20 @@ pub fn view(state: &AppState) -> Element<Message> {
                                         }
                                     })
                                     .collect();
-                                    
-                                if let Some(relative_pos) = entry_positions.iter().position(|pos| pos.position_in_page == position_idx) {
+
+                                if let Some(relative_pos) = entry_positions
+                                    .iter()
+                                    .position(|pos| pos.position_in_page == position_idx)
+                                {
                                     let image_url = if relative_pos < total_images_for_entry {
                                         let image_index = relative_pos % images_per_copy;
-                                        image_urls.get(image_index).unwrap_or(&selected_card.border_crop)
+                                        image_urls
+                                            .get(image_index)
+                                            .unwrap_or(&selected_card.border_crop)
                                     } else {
                                         &selected_card.border_crop // Fallback
                                     };
-                                    
+
                                     if let Some(image_bytes) = get_cached_image_bytes(image_url) {
                                         // Display the correct image based on face mode and position
                                         let image_handle = image::Handle::from_bytes(image_bytes);
@@ -1408,11 +1450,14 @@ pub fn view(state: &AppState) -> Element<Message> {
                                     }
                                 } else {
                                     // Position not found, show fallback
-                                    button(text(format!("Error\n{}", entry.decklist_entry.name)).size(9))
-                                        .on_press(Message::ShowPrintSelection(*entry_idx))
-                                        .width(Length::Fixed(GRID_CARD_WIDTH))
-                                        .height(Length::Fixed(GRID_CARD_HEIGHT))
-                                        .padding(0)
+                                    button(
+                                        text(format!("Error\n{}", entry.decklist_entry.name))
+                                            .size(9),
+                                    )
+                                    .on_press(Message::ShowPrintSelection(*entry_idx))
+                                    .width(Length::Fixed(GRID_CARD_WIDTH))
+                                    .height(Length::Fixed(GRID_CARD_HEIGHT))
+                                    .padding(0)
                                 }
                             } else {
                                 // No card selected, show entry name
@@ -1449,25 +1494,27 @@ pub fn view(state: &AppState) -> Element<Message> {
                 column![
                     text(grid_title).size(16),
                     page_nav,
-                    column(grid_rows).spacing(5),
+                    column(grid_rows).spacing(0),
                     // Generate PDF button (only show when we have parsed cards)
                     if state.parsed_cards.is_empty() {
                         Element::from(column![])
                     } else {
-                        Element::from(row![
-                            button(if state.is_generating_pdf {
-                                "Generating PDF..."
-                            } else {
-                                "Generate & Save PDF from Preview"
-                            })
-                            .on_press_maybe(if state.is_generating_pdf {
-                                None
-                            } else {
-                                Some(Message::GeneratePdf)
-                            })
-                            .padding(10),
-                        ]
-                        .spacing(10))
+                        Element::from(
+                            row![
+                                button(if state.is_generating_pdf {
+                                    "Generating PDF..."
+                                } else {
+                                    "Generate & Save PDF from Preview"
+                                })
+                                .on_press_maybe(if state.is_generating_pdf {
+                                    None
+                                } else {
+                                    Some(Message::GeneratePdf)
+                                })
+                                .padding(10),
+                            ]
+                            .spacing(10),
+                        )
                     },
                 ]
                 .spacing(10)
@@ -1476,110 +1523,97 @@ pub fn view(state: &AppState) -> Element<Message> {
                 // Print selection modal - only show when explicitly in this mode
                 if let Some(ref grid_preview) = state.grid_preview {
                     if let Some(selected_entry_idx) = grid_preview.selected_entry_index {
-                    if let Some(entry) = grid_preview.entries.get(selected_entry_idx) {
-                        let modal_title = format!(
-                            "Select printing for {}x {}",
-                            entry.decklist_entry.multiple, entry.decklist_entry.name
-                        );
+                        if let Some(entry) = grid_preview.entries.get(selected_entry_idx) {
+                            let modal_title = format!(
+                                "Select printing for {}x {}",
+                                entry.decklist_entry.multiple, entry.decklist_entry.name
+                            );
 
-                        // Get pagination info from the grid
-                        let print_grid = grid_preview.print_selection_grid.as_ref().unwrap();
-                        let (start_idx, end_idx) = print_grid.get_current_page_items();
+                            // Get pagination info from the grid
+                            let print_grid = grid_preview.print_selection_grid.as_ref().unwrap();
+                            let (start_idx, end_idx) = print_grid.get_current_page_items();
 
-                        // Create pagination controls
-                        let page_nav = print_grid.create_navigation_controls(
-                            Message::PrintSelectionPrevPage,
-                            Message::PrintSelectionNextPage,
-                        );
+                            // Create pagination controls
+                            let page_nav = print_grid.create_navigation_controls(
+                                Message::PrintSelectionPrevPage,
+                                Message::PrintSelectionNextPage,
+                            );
 
-                        // Create buttons only for current page printings (much faster!)
-                        let print_buttons: Vec<Element<Message>> = entry
-                            .available_printings
-                            .iter()
-                            .skip(start_idx)
-                            .take(end_idx - start_idx)
-                            .enumerate()
-                            .map(|(page_relative_idx, card)| {
-                                let actual_print_idx = start_idx + page_relative_idx; // Convert back to global index
-                                let is_selected = entry.selected_printing == Some(actual_print_idx);
+                            // Create buttons only for current page printings (much faster!)
+                            let print_buttons: Vec<Element<Message>> = entry
+                                .available_printings
+                                .iter()
+                                .skip(start_idx)
+                                .take(end_idx - start_idx)
+                                .enumerate()
+                                .map(|(page_relative_idx, card)| {
+                                    let actual_print_idx = start_idx + page_relative_idx; // Convert back to global index
+                                    let is_selected =
+                                        entry.selected_printing == Some(actual_print_idx);
 
-                                // Try to show actual card image, fallback to text
-                                let button_content: Element<Message> = if let Some(image_bytes) =
-                                    get_cached_image_bytes(&card.border_crop)
+                                    // Show only the image - cleaner and more space-efficient
+                                    let button_content: Element<Message> =
+                                        if let Some(image_bytes) =
+                                            get_cached_image_bytes(&card.border_crop)
+                                        {
+                                            // Show actual card image thumbnail only
+                                            let image_handle =
+                                                image::Handle::from_bytes(image_bytes);
+                                            image::Image::<image::Handle>::new(image_handle)
+                                                .width(Length::Fixed(THUMBNAIL_WIDTH))
+                                                .height(Length::Fixed(THUMBNAIL_HEIGHT))
+                                                .into()
+                                        } else {
+                                            // Minimal fallback while image loads
+                                            container(text("...").size(12))
+                                                .width(Length::Fixed(THUMBNAIL_WIDTH))
+                                                .height(Length::Fixed(THUMBNAIL_HEIGHT))
+                                                .center_x(Length::Fill)
+                                                .center_y(Length::Fill)
+                                                .into()
+                                        };
+
+                                    // Use different style for selected printing with tooltip
+                                    let btn = button(button_content)
+                                        .on_press(Message::SelectPrint {
+                                            entry_index: selected_entry_idx,
+                                            print_index: actual_print_idx,
+                                        })
+                                        .padding(if is_selected { 3 } else { 0 }); // Minimal padding, selected gets slight border
+
+                                    btn.into()
+                                })
+                                .collect();
+
+                            // Create grid layout for current page printings using configurable dimensions
+                            let mut print_rows = Vec::new();
+                            let mut current_row = Vec::new();
+
+                            for (i, button) in print_buttons.into_iter().enumerate() {
+                                current_row.push(button);
+
+                                if current_row.len() == PRINT_SELECTION_COLUMNS
+                                    || i == (end_idx - start_idx) - 1
                                 {
-                                    // Show actual card image thumbnail
-                                    let image_handle = image::Handle::from_bytes(image_bytes);
-                                    column![
-                                        image::Image::<image::Handle>::new(image_handle)
-                                            .width(Length::Fixed(THUMBNAIL_WIDTH))
-                                            .height(Length::Fixed(THUMBNAIL_HEIGHT)),
-                                        text::<Theme, iced::Renderer>(format!(
-                                            "{}\n[{}]",
-                                            card.set.to_uppercase(),
-                                            card.language.to_uppercase()
-                                        ))
-                                        .size(10)
-                                    ]
-                                    .spacing(2)
-                                    .into()
-                                } else {
-                                    // Fallback to text while image loads
-                                    column![
-                                        container(text("Loading...").size(10))
-                                            .width(Length::Fixed(THUMBNAIL_WIDTH))
-                                            .height(Length::Fixed(THUMBNAIL_HEIGHT))
-                                            .center_x(Length::Fill)
-                                            .center_y(Length::Fill),
-                                        text(format!(
-                                            "{}\n[{}]",
-                                            card.set.to_uppercase(),
-                                            card.language.to_uppercase()
-                                        ))
-                                        .size(10)
-                                    ]
-                                    .spacing(2)
-                                    .into()
-                                };
-
-                                // Use different style for selected printing
-                                let btn = button(button_content)
-                                    .on_press(Message::SelectPrint {
-                                        entry_index: selected_entry_idx,
-                                        print_index: actual_print_idx,
-                                    })
-                                    .padding(if is_selected { 6 } else { 8 }); // Visual selection indicator
-
-                                btn.into()
-                            })
-                            .collect();
-
-                        // Create a 3x4 grid layout for current page printings
-                        let mut print_rows = Vec::new();
-                        let mut current_row = Vec::new();
-
-                        for (i, button) in print_buttons.into_iter().enumerate() {
-                            current_row.push(button);
-
-                            if current_row.len() == 3 || i == (end_idx - start_idx) - 1 {
-                                // Complete row (3 items) or last item of current page
-                                print_rows.push(row(current_row).spacing(10).into());
-                                current_row = Vec::new();
+                                    // Complete row or last item of current page - no spacing for tighter grid
+                                    print_rows.push(row(current_row).spacing(0).into());
+                                    current_row = Vec::new();
+                                }
                             }
-                        }
 
-                        column![
+                            column![
                             text(modal_title).size(16),
                             button("Close")
                                 .on_press(Message::ClosePrintSelection)
                                 .padding(5),
                             page_nav,
                             text(format!("Click on a card image to select that printing ({} total printings):", entry.available_printings.len())).size(12),
-                            column(print_rows).spacing(10),
+                            column(print_rows).spacing(0),
                         ]
                         .spacing(10)
-                    } else {
-                        column![text("Error: Invalid entry selected")]
-                    }
+                        } else {
+                            column![text("Error: Invalid entry selected")]
+                        }
                     } else {
                         column![text("Error: No entry selected")]
                     }
