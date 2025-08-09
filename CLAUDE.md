@@ -39,6 +39,13 @@ Magic Card Proxy Sheet Generator - A Rust GUI application that creates PDF proxy
 - `cargo clean` - Remove build artifacts from target directory
 - `cargo update` - Update dependencies in Cargo.lock
 
+### Git Workflow (IMPORTANT)
+- **ALWAYS create a git commit before major refactorings** - This prevents loss of working functionality during complex code restructuring
+- Use descriptive commit messages that explain what is working at that state
+- Example commit messages: "grid preview working with print selection", "background loading functional", "complete GUI integration"
+- Before major architectural changes (moving code between modules, removing/adding large sections), ensure the current state is committed first
+- This allows easy recovery if refactoring goes wrong or functionality is accidentally removed
+
 ## Architecture
 
 ### Application Structure (Iced Pattern)
