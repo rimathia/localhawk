@@ -31,7 +31,12 @@ pub struct BackgroundLoadHandle {
 impl BackgroundLoadHandle {
     /// Get latest progress (non-blocking)
     pub fn try_get_progress(&mut self) -> Option<BackgroundLoadProgress> {
-        self.progress_rx.try_recv().ok()
+        // Drain all available progress messages and return the latest one
+        let mut latest_progress = None;
+        while let Ok(progress) = self.progress_rx.try_recv() {
+            latest_progress = Some(progress);
+        }
+        latest_progress
     }
     
     /// Cancel background loading
@@ -207,18 +212,17 @@ async fn load_background_images_impl(
                 
                 alternatives_loaded += 1;
                 
-                // Send progress update periodically (every 5 images to avoid spam)
-                if alternatives_loaded % 5 == 0 {
-                    send_progress(&progress_tx, BackgroundLoadProgress {
-                        phase: LoadingPhase::Alternatives,
-                        current_entry: entries.len(),
-                        total_entries: entries.len(),
-                        selected_loaded,
-                        alternatives_loaded,
-                        total_alternatives,
-                        errors: errors.clone(),
-                    });
-                }
+                // Send progress update for every alternative (no throttling to ensure accurate progress)
+                log::debug!("Sending alternatives progress: {}/{}", alternatives_loaded, total_alternatives);
+                send_progress(&progress_tx, BackgroundLoadProgress {
+                    phase: LoadingPhase::Alternatives,
+                    current_entry: entries.len(),
+                    total_entries: entries.len(),
+                    selected_loaded,
+                    alternatives_loaded,
+                    total_alternatives,
+                    errors: errors.clone(),
+                });
             }
         }
     }
