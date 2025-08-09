@@ -2,7 +2,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use crate::{DecklistEntry, DoubleFaceMode, ProxyError};
-use crate::globals::{get_or_fetch_search_results, get_or_fetch_image};
+use crate::globals::{get_or_fetch_search_results, get_or_fetch_image_bytes};
 
 #[derive(Debug, Clone)]
 pub struct BackgroundLoadProgress {
@@ -130,7 +130,7 @@ async fn load_background_images_impl(
                     
                     for url in urls {
                         log::debug!("    Caching image: {}", url);
-                        if let Err(e) = get_or_fetch_image(&url).await {
+                        if let Err(e) = get_or_fetch_image_bytes(&url).await {
                             let error_msg = format!("Failed to cache {}: {}", url, e);
                             log::warn!("{}", error_msg);
                             errors.push(error_msg);
@@ -204,7 +204,7 @@ async fn load_background_images_impl(
                     card.name, card.set.to_uppercase(), card.language);
                 
                 // Cache front image for alternative (most common use case)
-                if let Err(e) = get_or_fetch_image(&card.border_crop).await {
+                if let Err(e) = get_or_fetch_image_bytes(&card.border_crop).await {
                     let error_msg = format!("Failed to cache alternative {}: {}", card.border_crop, e);
                     log::warn!("{}", error_msg);
                     errors.push(error_msg);

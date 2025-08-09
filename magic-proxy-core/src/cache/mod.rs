@@ -1,4 +1,3 @@
-use printpdf::image_crate::DynamicImage;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
@@ -76,36 +75,17 @@ impl ImageCache {
         Ok(cache)
     }
 
-    pub fn get(&mut self, url: &str) -> Option<DynamicImage> {
+    pub fn get(&mut self, url: &str) -> Option<Vec<u8>> {
         if let Some(entry) = self.cache.get_mut(url) {
             entry.last_accessed = OffsetDateTime::now_utc();
             debug!(url = %url, "Image cache HIT");
-            
-            // Convert raw bytes to DynamicImage when requested
-            match printpdf::image_crate::load_from_memory(&entry.raw_bytes) {
-                Ok(image) => Some(image),
-                Err(e) => {
-                    warn!(url = %url, error = %e, "Failed to decode cached image bytes");
-                    None
-                }
-            }
+            Some(entry.raw_bytes.clone())
         } else {
             debug!(url = %url, "Image cache MISS");
             None
         }
     }
     
-    /// Get raw image bytes without converting to DynamicImage (for GUI display)
-    pub fn get_raw_bytes(&mut self, url: &str) -> Option<Vec<u8>> {
-        if let Some(entry) = self.cache.get_mut(url) {
-            entry.last_accessed = OffsetDateTime::now_utc();
-            debug!(url = %url, "Image cache HIT (raw bytes)");
-            Some(entry.raw_bytes.clone())
-        } else {
-            debug!(url = %url, "Image cache MISS (raw bytes)");
-            None
-        }
-    }
 
     pub fn insert(&mut self, url: String, raw_bytes: Vec<u8>) -> Result<(), ProxyError> {
         let now = OffsetDateTime::now_utc();

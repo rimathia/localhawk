@@ -2,7 +2,6 @@ use crate::{
     CardNameCache, CardNameLookup, ImageCache, NameLookupResult, ProxyError, 
     ScryfallClient, SearchResultsCache, SetCodesCache,
 };
-use printpdf::image_crate::DynamicImage;
 use std::collections::HashSet;
 use std::sync::{Arc, OnceLock, RwLock};
 use tracing::{info, debug};
@@ -239,39 +238,45 @@ pub async fn force_update_set_codes() -> Result<(), ProxyError> {
     Ok(())
 }
 
-pub async fn get_or_fetch_image(url: &str) -> Result<DynamicImage, ProxyError> {
+pub async fn get_or_fetch_image_bytes(url: &str) -> Result<Vec<u8>, ProxyError> {
     let cache = get_image_cache();
     let client = get_scryfall_client();
 
     // Try to get from cache first (note: this needs mutable access for LRU tracking)
-    let cached_image = {
+    let cached_bytes = {
         let mut cache_guard = cache.write().unwrap();
         cache_guard.get(url)
     };
     
-    match cached_image {
-        Some(image) => {
-            Ok(image)
+    match cached_bytes {
+        Some(bytes) => {
+            Ok(bytes)
         },
         None => {
             debug!(url = %url, "Image cache MISS, fetching from network");
             
             // Fetch raw bytes and cache them
             let raw_bytes = client.get_image_bytes(url).await?;
-            let dynamic_image = printpdf::image_crate::load_from_memory(&raw_bytes)
-                .map_err(|e| ProxyError::Cache(format!("Failed to decode image: {}", e)))?;
             
             // Insert raw bytes into cache (this handles disk persistence and LRU eviction)
             {
                 let mut cache_guard = cache.write().unwrap();
-                cache_guard.insert(url.to_string(), raw_bytes)?;
+                cache_guard.insert(url.to_string(), raw_bytes.clone())?;
             }
             
-            Ok(dynamic_image)
+            Ok(raw_bytes)
         }
     }
 }
 
+/// Get or fetch image and convert to DynamicImage (for PDF generation)
+pub async fn get_or_fetch_image(url: &str) -> Result<printpdf::image_crate::DynamicImage, ProxyError> {
+    let raw_bytes = get_or_fetch_image_bytes(url).await?;
+    
+    // Convert raw bytes to DynamicImage at the point of use
+    printpdf::image_crate::load_from_memory(&raw_bytes)
+        .map_err(|e| ProxyError::Cache(format!("Failed to decode image: {}", e)))
+}
 
 pub fn get_card_name_cache_info() -> Option<(time::OffsetDateTime, usize)> {
     let cache_info_ref = get_card_name_cache_info_ref();
@@ -292,7 +297,7 @@ pub fn get_image_cache_info() -> (usize, f64) {
 pub fn get_cached_image_bytes(url: &str) -> Option<Vec<u8>> {
     let cache = get_image_cache();
     let mut cache_guard = cache.write().unwrap();
-    cache_guard.get_raw_bytes(url)
+    cache_guard.get(url)
 }
 
 pub async fn get_or_fetch_search_results(card_name: &str) -> Result<crate::scryfall::CardSearchResult, ProxyError> {
