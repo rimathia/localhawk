@@ -9,6 +9,14 @@ use magic_proxy_core::{
 };
 use rfd::AsyncFileDialog;
 
+// Constants for grid preview card dimensions (maintaining Magic card aspect ratio: 480:680 = ~0.706)
+const GRID_CARD_WIDTH: f32 = 200.0;
+const GRID_CARD_HEIGHT: f32 = 283.3; // 200.0 / 0.7058823529 ≈ 283.3
+
+// Constants for print selection modal thumbnail dimensions (maintaining same aspect ratio)
+const THUMBNAIL_WIDTH: f32 = 80.0;
+const THUMBNAIL_HEIGHT: f32 = 113.3; // 80.0 / 0.7058823529 ≈ 113.3
+
 /// Individual card position in the grid layout
 #[derive(Debug, Clone, PartialEq)]
 pub struct GridPosition {
@@ -1012,7 +1020,7 @@ pub fn view(state: &AppState) -> Element<Message> {
             Some(state.double_face_mode.clone()),
             Message::DoubleFaceModeChanged,
         )
-        .width(Length::Fixed(120.0)),
+        .width(Length::Fixed(GRID_CARD_WIDTH)),
     ]
     .spacing(10);
 
@@ -1139,41 +1147,51 @@ pub fn view(state: &AppState) -> Element<Message> {
     ]
     .spacing(5);
 
-    // Grid preview section - Multi-page preview with print selection
-    let grid_preview_section = if let Some(ref grid_preview) = state.grid_preview {
+    // Always-visible 3x3 grid section - shows empty placeholders before parsing, gets populated as cards are processed
+    let grid_preview_section = {
         match state.preview_mode {
-            PreviewMode::GridPreview => {
-                // Page navigation controls
-                let page_nav = if let Some(ref page_navigation) = state.page_navigation {
-                    row![
-                        button("Previous")
-                            .on_press_maybe(if page_navigation.can_go_prev {
-                                Some(Message::PrevPage)
-                            } else {
-                                None
-                            })
-                            .padding(5),
-                        text(format!(
-                            "Page {} of {}",
-                            page_navigation.current_page + 1,
-                            page_navigation.total_pages
-                        ))
-                        .size(14),
-                        button("Next")
-                            .on_press_maybe(if page_navigation.can_go_next {
-                                Some(Message::NextPage)
-                            } else {
-                                None
-                            })
-                            .padding(5),
-                    ]
-                    .spacing(10)
+            PreviewMode::GridPreview | PreviewMode::Hidden => {
+                // Always show 3x3 grid layout - Default mode (both GridPreview and Hidden show grid)
+                
+                // Page navigation controls (only show if we have parsed cards and multiple pages)
+                let page_nav = if let Some(ref grid_preview) = state.grid_preview {
+                    if let Some(ref page_navigation) = state.page_navigation {
+                        row![
+                            button("Previous")
+                                .on_press_maybe(if page_navigation.can_go_prev {
+                                    Some(Message::PrevPage)
+                                } else {
+                                    None
+                                })
+                                .padding(5),
+                            text(format!(
+                                "Page {} of {}",
+                                page_navigation.current_page + 1,
+                                page_navigation.total_pages
+                            ))
+                            .size(14),
+                            button("Next")
+                                .on_press_maybe(if page_navigation.can_go_next {
+                                    Some(Message::NextPage)
+                                } else {
+                                    None
+                                })
+                                .padding(5),
+                        ]
+                        .spacing(10)
+                    } else {
+                        row![]
+                    }
                 } else {
                     row![]
                 };
 
-                // Get current page positions
-                let current_positions = grid_preview.get_current_page_positions();
+                // Get current page positions or use empty state
+                let current_positions = if let Some(ref grid_preview) = state.grid_preview {
+                    grid_preview.get_current_page_positions()
+                } else {
+                    Vec::new() // Empty state - will show all empty placeholders
+                };
 
                 // Create a 3x3 grid of cards
                 let mut grid_rows = Vec::new();
@@ -1200,7 +1218,13 @@ pub fn view(state: &AppState) -> Element<Message> {
                                 // Find the position of this grid slot relative to this entry's images
                                 let entry_positions: Vec<&GridPosition> = entry.grid_positions
                                     .iter()
-                                    .filter(|pos| pos.page == grid_preview.current_page)
+                                    .filter(|pos| {
+                                        if let Some(ref grid_preview) = state.grid_preview {
+                                            pos.page == grid_preview.current_page
+                                        } else {
+                                            pos.page == 0 // Default to page 0 if no grid preview yet
+                                        }
+                                    })
                                     .collect();
                                     
                                 if let Some(relative_pos) = entry_positions.iter().position(|pos| pos.position_in_page == position_idx) {
@@ -1216,12 +1240,12 @@ pub fn view(state: &AppState) -> Element<Message> {
                                         let image_handle = image::Handle::from_bytes(image_bytes);
                                         button(
                                             image::Image::<image::Handle>::new(image_handle)
-                                                .width(Length::Fixed(120.0))
-                                                .height(Length::Fixed(168.0)),
+                                                .width(Length::Fixed(GRID_CARD_WIDTH))
+                                                .height(Length::Fixed(GRID_CARD_HEIGHT)),
                                         )
                                         .on_press(Message::ShowPrintSelection(*entry_idx))
-                                        .width(Length::Fixed(120.0))
-                                        .height(Length::Fixed(168.0))
+                                        .width(Length::Fixed(GRID_CARD_WIDTH))
+                                        .height(Length::Fixed(GRID_CARD_HEIGHT))
                                         .padding(0) // No padding for seamless grid
                                     } else {
                                         // Fallback to text while image loads
@@ -1240,34 +1264,35 @@ pub fn view(state: &AppState) -> Element<Message> {
                                             .size(8),
                                         )
                                         .on_press(Message::ShowPrintSelection(*entry_idx))
-                                        .width(Length::Fixed(120.0))
-                                        .height(Length::Fixed(168.0))
+                                        .width(Length::Fixed(GRID_CARD_WIDTH))
+                                        .height(Length::Fixed(GRID_CARD_HEIGHT))
                                         .padding(0)
                                     }
                                 } else {
                                     // Position not found, show fallback
                                     button(text(format!("Error\n{}", entry.decklist_entry.name)).size(9))
                                         .on_press(Message::ShowPrintSelection(*entry_idx))
-                                        .width(Length::Fixed(120.0))
-                                        .height(Length::Fixed(168.0))
+                                        .width(Length::Fixed(GRID_CARD_WIDTH))
+                                        .height(Length::Fixed(GRID_CARD_HEIGHT))
                                         .padding(0)
                                 }
                             } else {
                                 // No card selected, show entry name
                                 button(text(entry.decklist_entry.name.clone()).size(10))
                                     .on_press(Message::ShowPrintSelection(*entry_idx))
-                                    .width(Length::Fixed(120.0))
-                                    .height(Length::Fixed(168.0))
+                                    .width(Length::Fixed(GRID_CARD_WIDTH))
+                                    .height(Length::Fixed(GRID_CARD_HEIGHT))
                                     .padding(0)
                             };
 
                             grid_row.push(container(card_widget).into());
                         } else {
-                            // Empty slot
-                            let empty_slot = container(text("Empty").size(10))
-                                .width(Length::Fixed(120.0))
-                                .height(Length::Fixed(168.0))
-                                .padding(0);
+                            // Empty slot - show visual placeholder only (no text)
+                            let empty_slot = container(text(""))
+                                .width(Length::Fixed(GRID_CARD_WIDTH))
+                                .height(Length::Fixed(GRID_CARD_HEIGHT))
+                                .center_x(Length::Fixed(GRID_CARD_WIDTH))
+                                .center_y(Length::Fixed(GRID_CARD_HEIGHT));
 
                             grid_row.push(empty_slot.into());
                         }
@@ -1275,31 +1300,44 @@ pub fn view(state: &AppState) -> Element<Message> {
                     grid_rows.push(row(grid_row).spacing(0).into()); // No spacing between cards
                 }
 
+                let grid_title = if state.is_building_preview {
+                    "Grid Preview: Building..."
+                } else if state.grid_preview.is_some() {
+                    "Grid Preview:"
+                } else {
+                    "PDF Preview (3x3 grid):"
+                };
+
                 column![
-                    text("Grid Preview:").size(16),
+                    text(grid_title).size(16),
                     page_nav,
                     column(grid_rows).spacing(5),
-                    // Generate PDF button for preview workflow
-                    row![
-                        button(if state.is_generating_pdf {
-                            "Generating PDF..."
-                        } else {
-                            "Generate & Save PDF from Preview"
-                        })
-                        .on_press_maybe(if state.is_generating_pdf {
-                            None
-                        } else {
-                            Some(Message::GeneratePdf)
-                        })
-                        .padding(10),
-                    ]
-                    .spacing(10),
+                    // Generate PDF button (only show when we have parsed cards)
+                    if state.parsed_cards.is_empty() {
+                        Element::from(column![])
+                    } else {
+                        Element::from(row![
+                            button(if state.is_generating_pdf {
+                                "Generating PDF..."
+                            } else {
+                                "Generate & Save PDF from Preview"
+                            })
+                            .on_press_maybe(if state.is_generating_pdf {
+                                None
+                            } else {
+                                Some(Message::GeneratePdf)
+                            })
+                            .padding(10),
+                        ]
+                        .spacing(10))
+                    },
                 ]
                 .spacing(10)
             }
             PreviewMode::PrintSelection => {
-                // Print selection modal
-                if let Some(selected_entry_idx) = grid_preview.selected_entry_index {
+                // Print selection modal - only show when explicitly in this mode
+                if let Some(ref grid_preview) = state.grid_preview {
+                    if let Some(selected_entry_idx) = grid_preview.selected_entry_index {
                     if let Some(entry) = grid_preview.entries.get(selected_entry_idx) {
                         let modal_title = format!(
                             "Select printing for {}x {}",
@@ -1322,8 +1360,8 @@ pub fn view(state: &AppState) -> Element<Message> {
                                     let image_handle = image::Handle::from_bytes(image_bytes);
                                     column![
                                         image::Image::<image::Handle>::new(image_handle)
-                                            .width(Length::Fixed(80.0))
-                                            .height(Length::Fixed(112.0)),
+                                            .width(Length::Fixed(THUMBNAIL_WIDTH))
+                                            .height(Length::Fixed(THUMBNAIL_HEIGHT)),
                                         text::<Theme, iced::Renderer>(format!(
                                             "{}\n[{}]",
                                             card.set.to_uppercase(),
@@ -1337,8 +1375,8 @@ pub fn view(state: &AppState) -> Element<Message> {
                                     // Fallback to text while image loads
                                     column![
                                         container(text("Loading...").size(10))
-                                            .width(Length::Fixed(80.0))
-                                            .height(Length::Fixed(112.0))
+                                            .width(Length::Fixed(THUMBNAIL_WIDTH))
+                                            .height(Length::Fixed(THUMBNAIL_HEIGHT))
                                             .center_x(Length::Fill)
                                             .center_y(Length::Fill),
                                         text(format!(
@@ -1390,16 +1428,14 @@ pub fn view(state: &AppState) -> Element<Message> {
                     } else {
                         column![text("Error: Invalid entry selected")]
                     }
+                    } else {
+                        column![text("Error: No entry selected")]
+                    }
                 } else {
-                    column![text("Error: No entry selected")]
+                    column![text("Error: No grid preview available")]
                 }
             }
-            PreviewMode::Hidden => column![],
         }
-    } else if state.is_building_preview {
-        column![text("Building preview...").size(16)]
-    } else {
-        column![]
     };
 
     let content = column![
