@@ -17,6 +17,104 @@ const GRID_CARD_HEIGHT: f32 = 283.3; // 200.0 / 0.7058823529 ≈ 283.3
 const THUMBNAIL_WIDTH: f32 = 80.0;
 const THUMBNAIL_HEIGHT: f32 = 113.3; // 80.0 / 0.7058823529 ≈ 113.3
 
+// Constants for print selection modal pagination
+const PRINTS_PER_PAGE: usize = 12; // 3x4 grid of thumbnails per page
+
+/// Reusable paginated card grid component
+#[derive(Debug, Clone)]
+pub struct PaginatedCardGrid {
+    pub current_page: usize,
+    pub total_items: usize,
+    pub items_per_page: usize,
+    pub grid_columns: usize,
+    pub grid_rows: usize,
+}
+
+impl PaginatedCardGrid {
+    pub fn new(total_items: usize, items_per_page: usize, grid_columns: usize, grid_rows: usize) -> Self {
+        let total_pages = if total_items == 0 {
+            1
+        } else {
+            (total_items + items_per_page - 1) / items_per_page // Ceiling division
+        };
+        
+        Self {
+            current_page: 0,
+            total_items,
+            items_per_page,
+            grid_columns,
+            grid_rows,
+        }
+    }
+
+    pub fn total_pages(&self) -> usize {
+        if self.total_items == 0 {
+            1
+        } else {
+            (self.total_items + self.items_per_page - 1) / self.items_per_page
+        }
+    }
+
+    pub fn can_go_prev(&self) -> bool {
+        self.current_page > 0
+    }
+
+    pub fn can_go_next(&self) -> bool {
+        self.current_page < self.total_pages() - 1
+    }
+
+    pub fn prev_page(&mut self) {
+        if self.can_go_prev() {
+            self.current_page -= 1;
+        }
+    }
+
+    pub fn next_page(&mut self) {
+        if self.can_go_next() {
+            self.current_page += 1;
+        }
+    }
+
+    pub fn get_current_page_items(&self) -> (usize, usize) {
+        let start = self.current_page * self.items_per_page;
+        let end = (start + self.items_per_page).min(self.total_items);
+        (start, end)
+    }
+
+    /// Create navigation controls for the paginated grid
+    pub fn create_navigation_controls<'a>(&self, prev_message: Message, next_message: Message) -> Element<'a, Message> {
+        if self.total_pages() <= 1 {
+            // No navigation needed for single page
+            return row![].into();
+        }
+
+        row![
+            button("Previous")
+                .on_press_maybe(if self.can_go_prev() {
+                    Some(prev_message)
+                } else {
+                    None
+                })
+                .padding(5),
+            text(format!(
+                "Page {} of {}",
+                self.current_page + 1,
+                self.total_pages()
+            ))
+            .size(14),
+            button("Next")
+                .on_press_maybe(if self.can_go_next() {
+                    Some(next_message)
+                } else {
+                    None
+                })
+                .padding(5),
+        ]
+        .spacing(10)
+        .into()
+    }
+}
+
 /// Individual card position in the grid layout
 #[derive(Debug, Clone, PartialEq)]
 pub struct GridPosition {
@@ -59,6 +157,7 @@ pub struct GridPreview {
     pub current_page: usize,                 // 0-indexed current page
     pub total_pages: usize,                  // Calculated from card count
     pub selected_entry_index: Option<usize>, // For print selection modal
+    pub print_selection_grid: Option<PaginatedCardGrid>, // Pagination for print selection modal
 }
 
 impl GridPreview {
@@ -181,6 +280,10 @@ pub enum Message {
         print_index: usize,
     },
     ClosePrintSelection,
+    
+    // Print selection pagination
+    PrintSelectionPrevPage,
+    PrintSelectionNextPage,
 
     // Background image loading (now using core library)
     PollBackgroundProgress,
@@ -361,8 +464,11 @@ async fn build_grid_preview_from_entries(
 ) -> Result<GridPreview, String> {
     let mut all_images = Vec::new();
     let mut card_position = 0;
+    
+    // Store search results to avoid duplicate API calls
+    let mut search_results = Vec::new();
 
-    // Process each decklist entry exactly like PDF generation
+    // First pass: Process each decklist entry and store search results
     for (entry_index, decklist_entry) in entries.iter().enumerate() {
         log::debug!(
             "Processing entry for grid: {}x '{}' with face mode {:?}",
@@ -384,6 +490,9 @@ async fn build_grid_preview_from_entries(
             return Err(format!("No printings found for card '{}'", decklist_entry.name));
         }
 
+        // Store search result for later reuse
+        search_results.push(search_result.clone());
+
         // Use the same card selection logic as PDF generation
         let selected_card = select_card_from_printings(&search_result.cards, decklist_entry)
             .and_then(|idx| search_result.cards.get(idx))
@@ -398,11 +507,12 @@ async fn build_grid_preview_from_entries(
         };
 
         log::debug!(
-            "Selected card: '{}' ({}) [{}] for entry '{}'",
+            "Selected card: '{}' ({}) [{}] for entry '{}' ({} total printings)",
             card.name,
             card.set.to_uppercase(),
             card.language,
-            decklist_entry.name
+            decklist_entry.name,
+            search_result.cards.len()
         );
 
         // Generate the actual images based on face mode - using the SAME logic as PDF generation
@@ -444,13 +554,14 @@ async fn build_grid_preview_from_entries(
         (all_images.len() + 8) / 9 // Ceiling division
     };
 
-    // Convert to the old format temporarily to maintain compatibility
+    // Second pass: Convert to the old format using cached search results (no duplicate API calls)
     let mut preview_entries = Vec::new();
     for (entry_index, decklist_entry) in entries.into_iter().enumerate() {
-        // Find all available printings for this entry
-        let available_printings = match ProxyGenerator::search_card(&decklist_entry.name).await {
-            Ok(search_result) => search_result.cards,
-            Err(_) => Vec::new(),
+        // Reuse search results from first pass instead of making another API call
+        let available_printings = if let Some(search_result) = search_results.get(entry_index) {
+            search_result.cards.clone()
+        } else {
+            Vec::new() // Fallback if something went wrong
         };
 
         let selected_printing = select_card_from_printings(&available_printings, &decklist_entry);
@@ -480,6 +591,7 @@ async fn build_grid_preview_from_entries(
         current_page: 0,
         total_pages,
         selected_entry_index: None,
+        print_selection_grid: None,
     };
 
     log::debug!(
@@ -674,6 +786,17 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             if let Some(ref mut grid_preview) = state.grid_preview {
                 if entry_index < grid_preview.entries.len() {
                     grid_preview.selected_entry_index = Some(entry_index);
+                    
+                    // Initialize pagination grid for print selection
+                    let entry = &grid_preview.entries[entry_index];
+                    let total_printings = entry.available_printings.len();
+                    grid_preview.print_selection_grid = Some(PaginatedCardGrid::new(
+                        total_printings,
+                        PRINTS_PER_PAGE,
+                        3, // 3 columns
+                        4, // 4 rows
+                    ));
+                    
                     state.preview_mode = PreviewMode::PrintSelection;
                 }
             }
@@ -742,6 +865,21 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             state.preview_mode = PreviewMode::GridPreview;
             if let Some(ref mut grid_preview) = state.grid_preview {
                 grid_preview.selected_entry_index = None;
+                grid_preview.print_selection_grid = None;
+            }
+        }
+        Message::PrintSelectionPrevPage => {
+            if let Some(ref mut grid_preview) = state.grid_preview {
+                if let Some(ref mut print_grid) = grid_preview.print_selection_grid {
+                    print_grid.prev_page();
+                }
+            }
+        }
+        Message::PrintSelectionNextPage => {
+            if let Some(ref mut grid_preview) = state.grid_preview {
+                if let Some(ref mut print_grid) = grid_preview.print_selection_grid {
+                    print_grid.next_page();
+                }
             }
         }
         Message::ClearDecklist => {
@@ -1344,13 +1482,26 @@ pub fn view(state: &AppState) -> Element<Message> {
                             entry.decklist_entry.multiple, entry.decklist_entry.name
                         );
 
-                        // Create buttons for each available printing with actual images when available
+                        // Get pagination info from the grid
+                        let print_grid = grid_preview.print_selection_grid.as_ref().unwrap();
+                        let (start_idx, end_idx) = print_grid.get_current_page_items();
+
+                        // Create pagination controls
+                        let page_nav = print_grid.create_navigation_controls(
+                            Message::PrintSelectionPrevPage,
+                            Message::PrintSelectionNextPage,
+                        );
+
+                        // Create buttons only for current page printings (much faster!)
                         let print_buttons: Vec<Element<Message>> = entry
                             .available_printings
                             .iter()
+                            .skip(start_idx)
+                            .take(end_idx - start_idx)
                             .enumerate()
-                            .map(|(print_idx, card)| {
-                                let is_selected = entry.selected_printing == Some(print_idx);
+                            .map(|(page_relative_idx, card)| {
+                                let actual_print_idx = start_idx + page_relative_idx; // Convert back to global index
+                                let is_selected = entry.selected_printing == Some(actual_print_idx);
 
                                 // Try to show actual card image, fallback to text
                                 let button_content: Element<Message> = if let Some(image_bytes) =
@@ -1394,7 +1545,7 @@ pub fn view(state: &AppState) -> Element<Message> {
                                 let btn = button(button_content)
                                     .on_press(Message::SelectPrint {
                                         entry_index: selected_entry_idx,
-                                        print_index: print_idx,
+                                        print_index: actual_print_idx,
                                     })
                                     .padding(if is_selected { 6 } else { 8 }); // Visual selection indicator
 
@@ -1402,15 +1553,15 @@ pub fn view(state: &AppState) -> Element<Message> {
                             })
                             .collect();
 
-                        // Create a grid layout for print selection (4 per row)
+                        // Create a 3x4 grid layout for current page printings
                         let mut print_rows = Vec::new();
                         let mut current_row = Vec::new();
 
                         for (i, button) in print_buttons.into_iter().enumerate() {
                             current_row.push(button);
 
-                            if current_row.len() == 4 || i == entry.available_printings.len() - 1 {
-                                // Complete row or last item
+                            if current_row.len() == 3 || i == (end_idx - start_idx) - 1 {
+                                // Complete row (3 items) or last item of current page
                                 print_rows.push(row(current_row).spacing(10).into());
                                 current_row = Vec::new();
                             }
@@ -1421,8 +1572,9 @@ pub fn view(state: &AppState) -> Element<Message> {
                             button("Close")
                                 .on_press(Message::ClosePrintSelection)
                                 .padding(5),
-                            text("Click on a card image to select that printing:").size(12),
-                            scrollable(column(print_rows).spacing(10)).height(Length::Fixed(400.0)),
+                            page_nav,
+                            text(format!("Click on a card image to select that printing ({} total printings):", entry.available_printings.len())).size(12),
+                            column(print_rows).spacing(10),
                         ]
                         .spacing(10)
                     } else {
