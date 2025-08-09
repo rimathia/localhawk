@@ -3,10 +3,10 @@ use iced::widget::{
 };
 use iced::{Element, Length, Task, Theme};
 use magic_proxy_core::{
-    Card, DecklistEntry, DoubleFaceMode, PdfOptions, ProxyGenerator, force_update_card_lookup,
+    Card, DecklistEntry, DoubleFaceMode, ProxyGenerator,
     get_cached_image_bytes, get_card_name_cache_info, get_image_cache_info,
+    start_background_image_loading, BackgroundLoadHandle, BackgroundLoadProgress, LoadingPhase,
 };
-use rfd::AsyncFileDialog;
 
 /// Individual card position in the grid layout
 #[derive(Debug, Clone, PartialEq)]
@@ -142,48 +142,6 @@ pub enum PreviewMode {
     PrintSelection, // Modal for selecting prints
 }
 
-/// Background image loader state for sequential loading
-#[derive(Debug, Clone)]
-pub struct BackgroundLoader {
-    pub entries: Vec<DecklistEntry>,
-    pub current_entry: usize,
-    pub current_alternative: usize,
-    pub total_images: usize,
-    pub loaded_images: usize,
-    pub phase: LoadingPhase,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum LoadingPhase {
-    Primary,      // Loading primary images (first printing of each card)
-    Alternatives, // Loading alternative printings
-}
-
-impl BackgroundLoader {
-    pub fn new(entries: Vec<DecklistEntry>) -> Self {
-        // Estimate total images (will be updated as we discover actual printings)
-        let estimated_total = entries.len() * 3; // Rough estimate: 3 printings per card on average
-
-        Self {
-            entries,
-            current_entry: 0,
-            current_alternative: 0,
-            total_images: estimated_total,
-            loaded_images: 0,
-            phase: LoadingPhase::Primary,
-        }
-    }
-
-    pub fn has_more_images(&self) -> bool {
-        match self.phase {
-            LoadingPhase::Primary => self.current_entry < self.entries.len(),
-            LoadingPhase::Alternatives => {
-                // Check if there are more alternatives to load
-                self.current_entry < self.entries.len()
-            }
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -215,14 +173,8 @@ pub enum Message {
     },
     ClosePrintSelection,
 
-    // Background image loading
-    StartBackgroundImageLoading(Vec<DecklistEntry>),
-    LoadNextImage,
-    ImageLoadResult {
-        url: String,
-        success: bool,
-        loader: BackgroundLoader,
-    },
+    // Background image loading (now using core library)
+    PollBackgroundProgress,
 }
 
 pub struct AppState {
@@ -243,8 +195,9 @@ pub struct AppState {
     preview_mode: PreviewMode,
     is_building_preview: bool,
 
-    // Background image loading
-    background_loader: Option<BackgroundLoader>,
+    // Background image loading (now using core library)
+    background_load_handle: Option<BackgroundLoadHandle>,
+    latest_background_progress: Option<BackgroundLoadProgress>,
 
     // Auto-continue to PDF generation after parsing
     auto_generate_after_parse: bool,
@@ -273,7 +226,8 @@ impl AppState {
             is_building_preview: false,
 
             // Initialize background loading fields
-            background_loader: None,
+            background_load_handle: None,
+            latest_background_progress: None,
 
             // Initialize auto-continue flag
             auto_generate_after_parse: false,
@@ -528,124 +482,6 @@ async fn build_grid_preview_from_entries(
     Ok(grid_preview)
 }
 
-/// Load the next image in the background loading sequence using core library functions
-async fn load_next_image(loader: BackgroundLoader) -> (String, bool, BackgroundLoader) {
-    use magic_proxy_core::get_or_fetch_image;
-
-    let mut updated_loader = loader;
-
-    match updated_loader.phase {
-        LoadingPhase::Primary => {
-            if let Some(entry) = updated_loader.entries.get(updated_loader.current_entry) {
-                log::debug!("Loading primary image for entry: {}", entry.name);
-
-                match ProxyGenerator::search_card(&entry.name).await {
-                    Ok(search_result) => {
-                        if let Some(primary_card) = search_result.cards.first() {
-                            // Use the core library's get_or_fetch_image to cache the image
-                            let success = match get_or_fetch_image(&primary_card.border_crop).await
-                            {
-                                Ok(_) => {
-                                    log::debug!(
-                                        "Successfully cached primary image: {}",
-                                        primary_card.border_crop
-                                    );
-                                    true
-                                }
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to cache primary image {}: {}",
-                                        primary_card.border_crop,
-                                        e
-                                    );
-                                    false
-                                }
-                            };
-
-                            updated_loader.loaded_images += 1;
-                            updated_loader.current_entry += 1;
-
-                            // If we've loaded all primary images, switch to alternatives phase
-                            if updated_loader.current_entry >= updated_loader.entries.len() {
-                                updated_loader.phase = LoadingPhase::Alternatives;
-                                updated_loader.current_entry = 0;
-                                updated_loader.current_alternative = 1; // Skip first (already loaded in primary)
-                            }
-
-                            return (primary_card.border_crop.clone(), success, updated_loader);
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to search for card '{}': {}", entry.name, e);
-                        updated_loader.current_entry += 1;
-                        return ("".to_string(), false, updated_loader);
-                    }
-                }
-            }
-        }
-        LoadingPhase::Alternatives => {
-            // Load alternative printings for each card
-            if let Some(entry) = updated_loader.entries.get(updated_loader.current_entry) {
-                match ProxyGenerator::search_card(&entry.name).await {
-                    Ok(search_result) => {
-                        if let Some(alternative) =
-                            search_result.cards.get(updated_loader.current_alternative)
-                        {
-                            log::debug!(
-                                "Loading alternative {} for entry: {}",
-                                updated_loader.current_alternative,
-                                entry.name
-                            );
-
-                            // Use the core library's get_or_fetch_image to cache the image
-                            let success = match get_or_fetch_image(&alternative.border_crop).await {
-                                Ok(_) => {
-                                    log::debug!(
-                                        "Successfully cached alternative image: {}",
-                                        alternative.border_crop
-                                    );
-                                    true
-                                }
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to cache alternative image {}: {}",
-                                        alternative.border_crop,
-                                        e
-                                    );
-                                    false
-                                }
-                            };
-
-                            updated_loader.loaded_images += 1;
-                            updated_loader.current_alternative += 1;
-
-                            // If no more alternatives for this card, move to next card
-                            if updated_loader.current_alternative >= search_result.cards.len() {
-                                updated_loader.current_entry += 1;
-                                updated_loader.current_alternative = 1; // Reset to 1 (skip primary)
-                            }
-
-                            return (alternative.border_crop.clone(), success, updated_loader);
-                        } else {
-                            // No more alternatives for this card, move to next
-                            updated_loader.current_entry += 1;
-                            updated_loader.current_alternative = 1;
-                        }
-                    }
-                    Err(e) => {
-                        log::warn!("Failed to search for card '{}': {}", entry.name, e);
-                        updated_loader.current_entry += 1;
-                        updated_loader.current_alternative = 1;
-                    }
-                }
-            }
-        }
-    }
-
-    // If we get here, we're done loading
-    ("".to_string(), true, updated_loader)
-}
-
 pub fn initialize() -> (AppState, Task<Message>) {
     (AppState::new(), Task::none())
 }
@@ -710,12 +546,14 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 build_aligned_parsed_output(&state.decklist_content.text(), &state.parsed_cards);
             state.parsed_cards_aligned_text = text_editor::Content::with_text(&aligned_text);
 
-            // Start background image loading immediately after parsing
+            // Start background image loading immediately after parsing (now using core library)
             if !cards.is_empty() {
-                state.background_loader = Some(BackgroundLoader::new(cards.clone()));
+                // Start background loading in core library
+                let handle = start_background_image_loading(cards.clone());
+                state.background_load_handle = Some(handle);
 
                 let mut tasks = vec![
-                    Task::perform(async { cards }, Message::StartBackgroundImageLoading),
+                    Task::perform(async { () }, |_| Message::PollBackgroundProgress),
                     Task::perform(async { () }, |_| Message::BuildGridPreview),
                 ];
 
@@ -728,221 +566,51 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 return Task::batch(tasks);
             }
         }
-        Message::ClearDecklist => {
-            state.decklist_content = text_editor::Content::new();
-            state.parsed_cards.clear();
-            state.parsed_cards_aligned_text = text_editor::Content::new();
-            state.error_message = None;
-            state.display_text = "Decklist cleared!".to_string();
-
-            // Clear background loading state
-            state.background_loader = None;
-        }
-        Message::GenerateAll => {
-            // Set flag to auto-continue to PDF generation after parsing
-            state.auto_generate_after_parse = true;
-
-            // Trigger parsing (PDF generation will be auto-triggered in DecklistParsed handler)
-            return update(state, Message::ParseDecklist);
-        }
-        Message::GeneratePdf => {
-            if state.parsed_cards.is_empty() {
-                state.error_message = Some("Please parse a decklist first!".to_string());
-                return Task::none();
-            }
-
-            state.is_generating_pdf = true;
-            state.error_message = None;
-            state.generated_pdf = None;
-
-            let cards = state.parsed_cards.clone();
-            let double_face_mode = state.double_face_mode.clone();
-            return Task::perform(
-                async move {
-                    // Build card list for PDF generation
-                    let mut card_list = Vec::new();
-
-                    for entry in cards {
-                        log::debug!("Searching for card: '{}'", entry.name);
-                        match ProxyGenerator::search_card(&entry.name).await {
-                            Ok(search_result) => {
-                                log::debug!(
-                                    "Found {} printings for '{}':",
-                                    search_result.cards.len(),
-                                    entry.name
-                                );
-                                for (i, card) in search_result.cards.iter().enumerate() {
-                                    log::debug!(
-                                        "  [{}] '{}' ({}) [{}]",
-                                        i,
-                                        card.name,
-                                        card.set.to_uppercase(),
-                                        card.language
-                                    );
-                                }
-                                // Use unified card selection logic (same as preview)
-                                if let Some(selected_index) =
-                                    select_card_from_printings(&search_result.cards, &entry)
-                                {
-                                    let card = search_result
-                                        .cards
-                                        .into_iter()
-                                        .nth(selected_index)
-                                        .unwrap();
-                                    log::debug!(
-                                        "Selected card: '{}' ({}) [{}]",
-                                        card.name,
-                                        card.set.to_uppercase(),
-                                        card.language
-                                    );
-                                    // Use the fully resolved face mode from parse_and_resolve_decklist
-                                    log::debug!(
-                                        "Entry details: '{}' [set: {:?}, lang: {:?}, face_mode: {:?}]",
-                                        entry.name,
-                                        entry.set,
-                                        entry.lang,
-                                        entry.face_mode
-                                    );
-
-                                    // No need for complex logic - the core library already resolved everything
-                                    let face_mode = entry.face_mode.clone();
-                                    log::debug!(
-                                        "Using resolved face mode for '{}': {:?}",
-                                        entry.name,
-                                        face_mode
-                                    );
-
-                                    card_list.push((card, entry.multiple as u32, face_mode));
-                                }
-                            }
-                            Err(e) => {
-                                log::debug!("Failed to search for card '{}': {:?}", entry.name, e);
-                                // Skip cards that can't be found
-                                continue;
-                            }
+        Message::PollBackgroundProgress => {
+            if let Some(handle) = state.background_load_handle.as_mut() {
+                if let Some(progress) = handle.try_get_progress() {
+                    log::debug!("Background progress update: {:?}", progress);
+                    state.latest_background_progress = Some(progress.clone());
+                    
+                    // Update display text with progress
+                    let progress_text = match progress.phase {
+                        LoadingPhase::Selected => {
+                            format!("Loading selected images: {}/{} entries, {} images cached...", 
+                                progress.current_entry, progress.total_entries, progress.selected_loaded)
                         }
-                    }
-
-                    // Generate PDF using the selected double face mode
-                    let pdf_options = PdfOptions {
-                        double_face_mode: double_face_mode,
-                        ..PdfOptions::default()
+                        LoadingPhase::Alternatives => {
+                            format!("Loading alternative images: {}/{} alternatives cached...", 
+                                progress.alternatives_loaded, progress.total_alternatives)
+                        }
+                        LoadingPhase::Completed => {
+                            format!("All images loaded! {} selected + {} alternatives = {} total images.", 
+                                progress.selected_loaded, progress.alternatives_loaded, 
+                                progress.selected_loaded + progress.alternatives_loaded)
+                        }
                     };
-                    match ProxyGenerator::generate_pdf_from_cards_with_face_modes(
-                        &card_list,
-                        pdf_options,
-                        |_current, _total| {
-                            // No progress reporting for now
-                        },
-                    )
-                    .await
-                    {
-                        Ok(pdf_data) => Ok(pdf_data),
-                        Err(e) => Err(format!("PDF generation failed: {}", e)),
+                    state.display_text = progress_text;
+                    
+                    // Show any errors
+                    if !progress.errors.is_empty() {
+                        let error_msg = format!("Loading completed with {} error(s): {}", 
+                            progress.errors.len(), progress.errors.join("; "));
+                        state.error_message = Some(error_msg);
                     }
-                },
-                Message::PdfGenerated,
-            );
-        }
-        Message::PdfGenerated(result) => {
-            state.is_generating_pdf = false;
-
-            match result {
-                Ok(pdf_data) => {
-                    state.generated_pdf = Some(pdf_data.clone());
-                    state.display_text = format!(
-                        "PDF generated successfully! {} bytes - Opening save dialog...",
-                        pdf_data.len()
-                    );
-
-                    // Auto-trigger save dialog after successful PDF generation
-                    return Task::perform(
-                        async {
-                            match AsyncFileDialog::new()
-                                .set_file_name("proxy_sheet.pdf")
-                                .add_filter("PDF Files", &["pdf"])
-                                .save_file()
-                                .await
-                            {
-                                Some(handle) => Some(handle.path().to_string_lossy().to_string()),
-                                None => None,
-                            }
-                        },
-                        Message::FileSaved,
-                    );
                 }
-                Err(error) => {
-                    state.error_message = Some(error);
-                    state.display_text = "PDF generation failed!".to_string();
-                }
-            }
-        }
-        Message::FileSaved(file_path) => {
-            if let Some(path) = file_path {
-                if let Some(pdf_data) = &state.generated_pdf {
-                    match std::fs::write(&path, pdf_data) {
-                        Ok(_) => {
-                            state.display_text = format!("PDF saved successfully to: {}", path);
-                            state.error_message = None;
-                        }
-                        Err(e) => {
-                            state.error_message = Some(format!("Failed to save PDF: {}", e));
-                        }
-                    }
+                
+                // Check if loading is finished
+                if handle.is_finished() {
+                    log::debug!("Background loading task finished");
+                    state.background_load_handle = None;
                 } else {
-                    state.error_message = Some("No PDF data to save!".to_string());
-                }
-            } else {
-                // User cancelled the dialog
-                state.display_text = "Save cancelled.".to_string();
-            }
-        }
-        Message::ForceUpdateCardNames => {
-            state.is_updating_card_names = true;
-            state.error_message = None;
-
-            return Task::perform(
-                async {
-                    match force_update_card_lookup().await {
-                        Ok(_) => {
-                            // Get cache info after update
-                            if let Some((timestamp, count)) = get_card_name_cache_info() {
-                                Ok(format!(
-                                    "Updated {} card names at {}",
-                                    count,
-                                    timestamp
-                                        .format(&time::format_description::well_known::Rfc3339)
-                                        .unwrap_or_else(|_| "unknown time".to_string())
-                                ))
-                            } else {
-                                Ok("Updated card names successfully".to_string())
-                            }
-                        }
-                        Err(e) => Err(format!("Failed to update card names: {}", e)),
-                    }
-                },
-                Message::CardNamesUpdated,
-            );
-        }
-        Message::CardNamesUpdated(result) => {
-            state.is_updating_card_names = false;
-
-            match result {
-                Ok(_) => {
-                    state.display_text = "Card names updated successfully!".to_string();
-                    state.error_message = None;
-                }
-                Err(error) => {
-                    state.error_message = Some(error);
-                    state.display_text = "Card name update failed!".to_string();
+                    // Continue polling
+                    return Task::perform(
+                        async { tokio::time::sleep(tokio::time::Duration::from_millis(100)).await; },
+                        |_| Message::PollBackgroundProgress
+                    );
                 }
             }
         }
-        Message::DoubleFaceModeChanged(mode) => {
-            state.double_face_mode = mode;
-        }
-
-        // Grid preview lifecycle handlers
         Message::BuildGridPreview => {
             if state.parsed_cards.is_empty() {
                 state.error_message = Some("No cards parsed to build preview".to_string());
@@ -958,7 +626,6 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 Message::GridPreviewBuilt,
             );
         }
-
         Message::GridPreviewBuilt(result) => {
             state.is_building_preview = false;
 
@@ -976,8 +643,6 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
         }
-
-        // Page navigation handlers
         Message::NextPage => {
             if let Some(ref mut grid_preview) = state.grid_preview {
                 if grid_preview.next_page() {
@@ -987,7 +652,6 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
         }
-
         Message::PrevPage => {
             if let Some(ref mut grid_preview) = state.grid_preview {
                 if grid_preview.prev_page() {
@@ -997,8 +661,6 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
         }
-
-        // Print selection handlers
         Message::ShowPrintSelection(entry_index) => {
             if let Some(ref mut grid_preview) = state.grid_preview {
                 if entry_index < grid_preview.entries.len() {
@@ -1007,11 +669,7 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
         }
-
-        Message::SelectPrint {
-            entry_index,
-            print_index,
-        } => {
+        Message::SelectPrint { entry_index, print_index } => {
             if let Some(ref mut grid_preview) = state.grid_preview {
                 if let Some(entry) = grid_preview.entries.get_mut(entry_index) {
                     entry.set_selected_printing(print_index);
@@ -1052,84 +710,34 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 grid_preview.selected_entry_index = None;
             }
         }
-
         Message::ClosePrintSelection => {
             state.preview_mode = PreviewMode::GridPreview;
             if let Some(ref mut grid_preview) = state.grid_preview {
                 grid_preview.selected_entry_index = None;
             }
         }
+        Message::ClearDecklist => {
+            state.decklist_content = text_editor::Content::new();
+            state.parsed_cards.clear();
+            state.parsed_cards_aligned_text = text_editor::Content::new();
+            state.error_message = None;
+            state.display_text = "Decklist cleared!".to_string();
+            
+            // Clear preview and navigation state
+            state.grid_preview = None;
+            state.page_navigation = None;
+            state.preview_mode = PreviewMode::Hidden;
+            state.is_building_preview = false;
 
-        Message::StartBackgroundImageLoading(_entries) => {
-            log::debug!("Starting background image loading");
-
-            // Start loading the first image using LoadNextImage
-            return Task::perform(async { () }, |_| Message::LoadNextImage);
+            // Clear background loading state
+            if let Some(handle) = state.background_load_handle.take() {
+                handle.cancel();
+            }
+            state.latest_background_progress = None;
         }
-
-        Message::LoadNextImage => {
-            if let Some(loader) = state.background_loader.take() {
-                if loader.has_more_images() {
-                    return Task::perform(
-                        load_next_image(loader),
-                        |(url, success, updated_loader)| Message::ImageLoadResult {
-                            url,
-                            success,
-                            loader: updated_loader,
-                        },
-                    );
-                } else {
-                    log::debug!("Background image loading completed");
-                    state.display_text = format!(
-                        "Parsed {} cards successfully! All images loaded ({} total).",
-                        state.parsed_cards.len(),
-                        loader.loaded_images
-                    );
-                }
-            }
-        }
-
-        Message::ImageLoadResult {
-            url,
-            success,
-            loader,
-        } => {
-            // Update the loader state
-            state.background_loader = Some(loader);
-
-            if success && !url.is_empty() {
-                log::debug!("Successfully cached image in core library: {}", url);
-            } else if !success && !url.is_empty() {
-                log::warn!("Failed to cache image: {}", url);
-            }
-
-            // Update progress display and continue loading
-            if let Some(ref loader) = state.background_loader {
-                if loader.has_more_images() {
-                    let phase_text = match loader.phase {
-                        LoadingPhase::Primary => "primary images",
-                        LoadingPhase::Alternatives => "alternatives",
-                    };
-                    state.display_text = format!(
-                        "Parsed {} cards successfully! Loading {} ({}/{} loaded)...",
-                        state.parsed_cards.len(),
-                        phase_text,
-                        loader.loaded_images,
-                        loader.total_images
-                    );
-
-                    // Continue loading next image
-                    return Task::perform(async { () }, |_| Message::LoadNextImage);
-                } else {
-                    // All images loaded
-                    state.display_text = format!(
-                        "Parsed {} cards successfully! All images cached ({} total).",
-                        state.parsed_cards.len(),
-                        loader.loaded_images
-                    );
-                    state.background_loader = None; // Clear the loader
-                }
-            }
+        // TODO: Add more message handlers here  
+        _ => {
+            log::warn!("Unhandled message: {:?}", std::any::type_name::<Message>());
         }
     }
     Task::none()
@@ -1262,16 +870,10 @@ pub fn view(state: &AppState) -> Element<Message> {
     .spacing(5);
 
     // Grid preview section - Multi-page preview with print selection
-    // IMPLEMENTED: Basic 3x3 grid preview, page navigation, print selection modal, entry-based selection
-    // TODO PHASE 3: Replace text with actual card images for true WYSIWYG preview
-    // TODO PHASE 4: Advanced UI polish (hover effects, visual grouping, keyboard shortcuts)
     let grid_preview_section = if let Some(ref grid_preview) = state.grid_preview {
         match state.preview_mode {
             PreviewMode::GridPreview => {
                 // Page navigation controls
-                // TODO: Add direct page navigation (clickable page numbers: 1, 2, 3, ...)
-                // TODO: Add keyboard shortcuts (arrow keys, Page Up/Down)
-                // TODO: Add page jump input field for large decklists
                 let page_nav = if let Some(ref page_navigation) = state.page_navigation {
                     row![
                         button("Previous")
@@ -1304,9 +906,6 @@ pub fn view(state: &AppState) -> Element<Message> {
                 let current_positions = grid_preview.get_current_page_positions();
 
                 // Create a 3x3 grid of cards
-                // TODO: Replace text buttons with actual card images for true WYSIWYG preview
-                // TODO: Add visual indicators (borders, badges) to group cards from same decklist entry
-                // TODO: Add hover effects to highlight all cards from same entry
                 let mut grid_rows = Vec::new();
                 for row_idx in 0..3 {
                     let mut grid_row = Vec::new();
@@ -1317,14 +916,6 @@ pub fn view(state: &AppState) -> Element<Message> {
                             current_positions.get(position_idx)
                         {
                             // Try to get cached image, fallback to text if not available
-                            //
-                            // PERFORMANCE NOTE: Currently calls get_cached_image_bytes() on every render cycle
-                            // (including every keystroke in text field). This causes cache hits for the same
-                            // URL repeatedly. We create a new image::Handle from raw bytes each time, rather
-                            // than caching the handles themselves in app state. Future optimization could
-                            // store image::Handle objects in app state to avoid repeated byte-to-handle conversion.
-                            // Calculate which image URL should be displayed at this position
-                            // We need to determine which image from the face mode this position represents
                             let card_widget = if let Some(selected_card) = entry.get_selected_card() {
                                 // Get all image URLs that would be generated for this entry's face mode
                                 let image_urls = ProxyGenerator::get_image_urls_for_face_mode(
@@ -1400,9 +991,7 @@ pub fn view(state: &AppState) -> Element<Message> {
                                     .padding(0)
                             };
 
-                            let card_button = card_widget;
-
-                            grid_row.push(container(card_button).into());
+                            grid_row.push(container(card_widget).into());
                         } else {
                             // Empty slot
                             let empty_slot = container(text("Empty").size(10))
@@ -1486,7 +1075,6 @@ pub fn view(state: &AppState) -> Element<Message> {
                                     })
                                     .padding(if is_selected { 6 } else { 8 }); // Visual selection indicator
 
-                                // TODO: Add border or background color for selected printing
                                 btn.into()
                             })
                             .collect();

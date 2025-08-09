@@ -18,7 +18,10 @@
       "Bash(echo:*)",
       "Bash(echo \"5. erayo -> test_flip_card_parsing ✓\")",
       "WebFetch(domain:docs.rs)",
-      "Bash(cargo run:*)"
+      "Bash(cargo run:*)",
+      "Bash(cargo doc:*)",
+      "Bash(sed:*)",
+      "Bash(env RUST_LOG=magic_proxy_core=debug cargo run -p magic-proxy-gui)"
     ],
     "deny": []
   }

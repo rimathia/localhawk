@@ -574,6 +574,7 @@ Successfully resolved potential inconsistency between grid preview and PDF gener
 
 ### Future Enhancements
 
+- **Background Loader Synchronization**: Currently, the background loader caches images for the original printings selected during decklist parsing, but doesn't update when users select different printings in the grid preview. This creates inefficiency where the wrong images are cached while the newly selected printings may need to be fetched later. Solution would involve either canceling and restarting the background loader with updated selections, or implementing a shared state system where both grid preview and background loader reference the same resolved cards.
 - **Drag & drop reordering**: Allow users to rearrange card positions within pages
 - **Print filtering**: Filter available printings by date, legality, or price
 - **Bulk operations**: Select printings for multiple entries at once

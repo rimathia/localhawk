@@ -1,3 +1,4 @@
+pub mod background_loading;
 pub mod cache;
 pub mod card_name_cache;
 pub mod decklist;
@@ -9,6 +10,7 @@ pub mod scryfall;
 pub mod search_results_cache;
 pub mod set_codes_cache;
 
+pub use background_loading::{BackgroundLoadHandle, BackgroundLoadProgress, LoadingPhase, start_background_image_loading};
 pub use cache::ImageCache;
 pub use card_name_cache::CardNameCache;
 pub use search_results_cache::SearchResultsCache;
