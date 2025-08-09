@@ -40,11 +40,27 @@ Magic Card Proxy Sheet Generator - A Rust GUI application that creates PDF proxy
 - `cargo update` - Update dependencies in Cargo.lock
 
 ### Git Workflow (IMPORTANT)
+
+#### Commit Guidelines
 - **ALWAYS create a git commit before major refactorings** - This prevents loss of working functionality during complex code restructuring
 - Use descriptive commit messages that explain what is working at that state
 - Example commit messages: "grid preview working with print selection", "background loading functional", "complete GUI integration"
 - Before major architectural changes (moving code between modules, removing/adding large sections), ensure the current state is committed first
 - This allows easy recovery if refactoring goes wrong or functionality is accidentally removed
+
+#### File Management
+- **NEVER add files to version control without asking first** - Always verify whether a file should be tracked before committing
+- **Ask before adding any new files**: Debug logs, temporary files, build artifacts, cache files, or any file you're unsure about
+- Examples of files to avoid: `debug.log`, `*.tmp`, `.DS_Store`, `target/*`, cache directories, temporary test files
+- When unsure, describe the file and ask: "Should I include this file in the commit?"
+
+#### GUI Application Workflow
+- **This is a graphical application** - Visual and interactive functionality cannot be verified through code review alone
+- **Always seek user feedback before committing GUI changes** - The user needs to test the interface to confirm it works as expected
+- **Wait for user confirmation** before marking GUI features as "working" or "complete"
+- **Ask before committing**: "Should I commit this state?" or "Does this meet your expectations?"
+- Examples requiring user verification: Layout changes, visual alignment, interactive behavior, styling, user workflows
+- Code compilation success ≠ feature completeness for GUI applications
 
 ## Architecture
 
