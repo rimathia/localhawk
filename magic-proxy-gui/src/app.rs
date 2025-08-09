@@ -682,8 +682,22 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     // Update the corresponding DecklistEntry in parsed_cards with selected printing info
                     if let Some(selected_card) = entry.get_selected_card() {
                         // Find the matching entry in parsed_cards by name
+                        log::debug!(
+                            "Looking for match: grid entry name='{}', checking against {} parsed entries",
+                            entry.decklist_entry.name,
+                            state.parsed_cards.len()
+                        );
+                        
+                        for parsed in &state.parsed_cards {
+                            log::debug!(
+                                "  Parsed entry: '{}'",
+                                parsed.name
+                            );
+                        }
+                        
                         if let Some(parsed_entry) = state.parsed_cards.iter_mut().find(|parsed| {
-                            parsed.name.to_lowercase() == entry.decklist_entry.name.to_lowercase()
+                            parsed.name.to_lowercase() == entry.decklist_entry.name.to_lowercase() &&
+                            parsed.face_mode == entry.decklist_entry.face_mode
                         }) {
                             // Update the parsed entry with the selected printing's set and language
                             parsed_entry.set = Some(selected_card.set.clone());
@@ -694,6 +708,11 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                                 parsed_entry.name,
                                 selected_card.set,
                                 selected_card.language
+                            );
+                        } else {
+                            log::warn!(
+                                "Could not find matching parsed entry for grid entry '{}'",
+                                entry.decklist_entry.name
                             );
                         }
                     }
