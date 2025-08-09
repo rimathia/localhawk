@@ -3,10 +3,11 @@ use iced::widget::{
 };
 use iced::{Element, Length, Task, Theme};
 use magic_proxy_core::{
-    Card, DecklistEntry, DoubleFaceMode, ProxyGenerator,
-    get_cached_image_bytes, get_card_name_cache_info, get_image_cache_info,
+    Card, DecklistEntry, DoubleFaceMode, PdfOptions, ProxyGenerator,
+    get_cached_image_bytes, get_card_name_cache_info, get_image_cache_info, force_update_card_lookup,
     start_background_image_loading, BackgroundLoadHandle, BackgroundLoadProgress, LoadingPhase,
 };
+use rfd::AsyncFileDialog;
 
 /// Individual card position in the grid layout
 #[derive(Debug, Clone, PartialEq)]
@@ -754,7 +755,209 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             }
             state.latest_background_progress = None;
         }
-        // TODO: Add more message handlers here  
+        Message::GenerateAll => {
+            // Set flag to auto-continue to PDF generation after parsing
+            state.auto_generate_after_parse = true;
+
+            // Trigger parsing (PDF generation will be auto-triggered in DecklistParsed handler)
+            return update(state, Message::ParseDecklist);
+        }
+        Message::GeneratePdf => {
+            if state.parsed_cards.is_empty() {
+                state.error_message = Some("Please parse a decklist first!".to_string());
+                return Task::none();
+            }
+
+            state.is_generating_pdf = true;
+            state.error_message = None;
+            state.generated_pdf = None;
+
+            let cards = state.parsed_cards.clone();
+            let double_face_mode = state.double_face_mode.clone();
+            return Task::perform(
+                async move {
+                    // Build card list for PDF generation
+                    let mut card_list = Vec::new();
+
+                    for entry in cards {
+                        log::debug!("Searching for card: '{}'", entry.name);
+                        match ProxyGenerator::search_card(&entry.name).await {
+                            Ok(search_result) => {
+                                log::debug!(
+                                    "Found {} printings for '{}':",
+                                    search_result.cards.len(),
+                                    entry.name
+                                );
+                                for (i, card) in search_result.cards.iter().enumerate() {
+                                    log::debug!(
+                                        "  [{}] '{}' ({}) [{}]",
+                                        i,
+                                        card.name,
+                                        card.set.to_uppercase(),
+                                        card.language
+                                    );
+                                }
+                                // Use unified card selection logic (same as preview)
+                                if let Some(selected_index) =
+                                    select_card_from_printings(&search_result.cards, &entry)
+                                {
+                                    let card = search_result
+                                        .cards
+                                        .into_iter()
+                                        .nth(selected_index)
+                                        .unwrap();
+                                    log::debug!(
+                                        "Selected card: '{}' ({}) [{}]",
+                                        card.name,
+                                        card.set.to_uppercase(),
+                                        card.language
+                                    );
+                                    // Use the fully resolved face mode from parse_and_resolve_decklist
+                                    log::debug!(
+                                        "Entry details: '{}' [set: {:?}, lang: {:?}, face_mode: {:?}]",
+                                        entry.name,
+                                        entry.set,
+                                        entry.lang,
+                                        entry.face_mode
+                                    );
+
+                                    // No need for complex logic - the core library already resolved everything
+                                    let face_mode = entry.face_mode.clone();
+                                    log::debug!(
+                                        "Using resolved face mode for '{}': {:?}",
+                                        entry.name,
+                                        face_mode
+                                    );
+
+                                    card_list.push((card, entry.multiple as u32, face_mode));
+                                }
+                            }
+                            Err(e) => {
+                                log::debug!("Failed to search for card '{}': {:?}", entry.name, e);
+                                // Skip cards that can't be found
+                                continue;
+                            }
+                        }
+                    }
+
+                    // Generate PDF using the selected double face mode
+                    let pdf_options = PdfOptions {
+                        double_face_mode: double_face_mode,
+                        ..PdfOptions::default()
+                    };
+                    match ProxyGenerator::generate_pdf_from_cards_with_face_modes(
+                        &card_list,
+                        pdf_options,
+                        |_current, _total| {
+                            // No progress reporting for now
+                        },
+                    )
+                    .await
+                    {
+                        Ok(pdf_data) => Ok(pdf_data),
+                        Err(e) => Err(format!("PDF generation failed: {}", e)),
+                    }
+                },
+                Message::PdfGenerated,
+            );
+        }
+        Message::PdfGenerated(result) => {
+            state.is_generating_pdf = false;
+
+            match result {
+                Ok(pdf_data) => {
+                    state.generated_pdf = Some(pdf_data.clone());
+                    state.display_text = format!(
+                        "PDF generated successfully! {} bytes - Opening save dialog...",
+                        pdf_data.len()
+                    );
+
+                    // Auto-trigger save dialog after successful PDF generation
+                    return Task::perform(
+                        async {
+                            match AsyncFileDialog::new()
+                                .set_file_name("proxy_sheet.pdf")
+                                .add_filter("PDF Files", &["pdf"])
+                                .save_file()
+                                .await
+                            {
+                                Some(handle) => Some(handle.path().to_string_lossy().to_string()),
+                                None => None,
+                            }
+                        },
+                        Message::FileSaved,
+                    );
+                }
+                Err(error) => {
+                    state.error_message = Some(error);
+                    state.display_text = "PDF generation failed!".to_string();
+                }
+            }
+        }
+        Message::FileSaved(file_path) => {
+            if let Some(path) = file_path {
+                if let Some(pdf_data) = &state.generated_pdf {
+                    match std::fs::write(&path, pdf_data) {
+                        Ok(_) => {
+                            state.display_text = format!("PDF saved successfully to: {}", path);
+                            state.error_message = None;
+                        }
+                        Err(e) => {
+                            state.error_message = Some(format!("Failed to save PDF: {}", e));
+                        }
+                    }
+                } else {
+                    state.error_message = Some("No PDF data to save!".to_string());
+                }
+            } else {
+                // User cancelled the dialog
+                state.display_text = "Save cancelled.".to_string();
+            }
+        }
+        Message::ForceUpdateCardNames => {
+            state.is_updating_card_names = true;
+            state.error_message = None;
+
+            return Task::perform(
+                async {
+                    match force_update_card_lookup().await {
+                        Ok(_) => {
+                            // Get cache info after update
+                            if let Some((timestamp, count)) = get_card_name_cache_info() {
+                                Ok(format!(
+                                    "Updated {} card names at {}",
+                                    count,
+                                    timestamp
+                                        .format(&time::format_description::well_known::Rfc3339)
+                                        .unwrap_or_else(|_| "unknown time".to_string())
+                                ))
+                            } else {
+                                Ok("Updated card names successfully".to_string())
+                            }
+                        }
+                        Err(e) => Err(format!("Failed to update card names: {}", e)),
+                    }
+                },
+                Message::CardNamesUpdated,
+            );
+        }
+        Message::CardNamesUpdated(result) => {
+            state.is_updating_card_names = false;
+
+            match result {
+                Ok(_) => {
+                    state.display_text = "Card names updated successfully!".to_string();
+                    state.error_message = None;
+                }
+                Err(error) => {
+                    state.error_message = Some(error);
+                    state.display_text = "Card name update failed!".to_string();
+                }
+            }
+        }
+        Message::DoubleFaceModeChanged(mode) => {
+            state.double_face_mode = mode;
+        }
         _ => {
             log::warn!("Unhandled message: {:?}", std::any::type_name::<Message>());
         }
@@ -1076,6 +1279,21 @@ pub fn view(state: &AppState) -> Element<Message> {
                     text("Grid Preview:").size(16),
                     page_nav,
                     column(grid_rows).spacing(5),
+                    // Generate PDF button for preview workflow
+                    row![
+                        button(if state.is_generating_pdf {
+                            "Generating PDF..."
+                        } else {
+                            "Generate & Save PDF from Preview"
+                        })
+                        .on_press_maybe(if state.is_generating_pdf {
+                            None
+                        } else {
+                            Some(Message::GeneratePdf)
+                        })
+                        .padding(10),
+                    ]
+                    .spacing(10),
                 ]
                 .spacing(10)
             }
