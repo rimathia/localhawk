@@ -1,7 +1,7 @@
 use iced::widget::{
     button, column, container, image, pick_list, row, scrollable, text, text_editor,
 };
-use iced::{Element, Length, Task, Theme};
+use iced::{Element, Length, Task};
 use magic_proxy_core::{
     BackgroundLoadHandle, BackgroundLoadProgress, Card, DecklistEntry, DoubleFaceMode,
     LoadingPhase, PdfOptions, ProxyGenerator, force_update_card_lookup, get_cached_image_bytes,
@@ -28,8 +28,8 @@ pub struct PaginatedCardGrid {
     pub current_page: usize,
     pub total_items: usize,
     pub items_per_page: usize,
-    pub grid_columns: usize,
-    pub grid_rows: usize,
+    pub _grid_columns: usize,  // Keep for potential future use
+    pub _grid_rows: usize,     // Keep for potential future use
 }
 
 impl PaginatedCardGrid {
@@ -39,7 +39,7 @@ impl PaginatedCardGrid {
         grid_columns: usize,
         grid_rows: usize,
     ) -> Self {
-        let total_pages = if total_items == 0 {
+        let _total_pages = if total_items == 0 {
             1
         } else {
             (total_items + items_per_page - 1) / items_per_page // Ceiling division
@@ -49,8 +49,8 @@ impl PaginatedCardGrid {
             current_page: 0,
             total_items,
             items_per_page,
-            grid_columns,
-            grid_rows,
+            _grid_columns: grid_columns,
+            _grid_rows: grid_rows,
         }
     }
 
@@ -173,13 +173,13 @@ pub struct GridPreview {
 
 impl GridPreview {
     /// Calculate total number of pages needed for all cards
-    pub fn calculate_total_pages(&self) -> usize {
+    pub fn _calculate_total_pages(&self) -> usize {
         let total_cards: usize = self
             .entries
             .iter()
             .map(|entry| {
                 if let Some(selected_card) = entry.get_selected_card() {
-                    calculate_actual_card_count(&entry.decklist_entry, selected_card)
+                    _calculate_actual_card_count(&entry.decklist_entry, selected_card)
                 } else {
                     entry.decklist_entry.multiple as usize // Fallback if no card found
                 }
@@ -359,7 +359,7 @@ impl AppState {
 
 /// Calculate the actual number of images that will be generated for a decklist entry
 /// considering its face mode and whether the card has a back face
-fn calculate_actual_card_count(entry: &DecklistEntry, card: &Card) -> usize {
+fn _calculate_actual_card_count(entry: &DecklistEntry, card: &Card) -> usize {
     let base_count = entry.multiple as usize;
 
     match entry.face_mode {
@@ -451,22 +451,13 @@ fn build_aligned_parsed_output(input_text: &str, parsed_cards: &[DecklistEntry])
 pub struct GridImage {
     pub entry_index: usize,      // Which decklist entry this came from
     pub copy_number: usize,      // Which copy of that entry (0-based)
-    pub image_index: usize,      // Which image within that copy (for double-faced cards)
-    pub card: Card,              // The actual card
+    pub _image_index: usize,      // Which image within that copy (for double-faced cards) - keep for future use
+    pub _card: Card,              // The actual card - keep for future use
     pub image_url: String,       // The URL of the image to display
     pub page: usize,             // Which page this appears on
     pub position_in_page: usize, // Position within the 3x3 grid (0-8)
 }
 
-/// Grid preview that exactly matches what the PDF will contain
-#[derive(Debug, Clone)]
-pub struct GridPreviewNew {
-    pub images: Vec<GridImage>,      // All images that will be in the PDF
-    pub entries: Vec<DecklistEntry>, // Original decklist entries
-    pub current_page: usize,
-    pub total_pages: usize,
-    pub selected_entry_index: Option<usize>, // For print selection modal
-}
 
 /// Build grid preview using the exact same logic as PDF generation
 async fn build_grid_preview_from_entries(
@@ -546,8 +537,8 @@ async fn build_grid_preview_from_entries(
                 all_images.push(GridImage {
                     entry_index,
                     copy_number: copy_number as usize,
-                    image_index,
-                    card: card.clone(),
+                    _image_index: image_index,
+                    _card: card.clone(),
                     image_url,
                     page,
                     position_in_page,
@@ -1138,9 +1129,6 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
         Message::DoubleFaceModeChanged(mode) => {
             state.double_face_mode = mode;
         }
-        _ => {
-            log::warn!("Unhandled message: {:?}", std::any::type_name::<Message>());
-        }
     }
     Task::none()
 }
@@ -1326,7 +1314,7 @@ pub fn view(state: &AppState) -> Element<Message> {
                 // Always show 3x3 grid layout - Default mode (both GridPreview and Hidden show grid)
 
                 // Page navigation controls (only show if we have parsed cards and multiple pages)
-                let page_nav = if let Some(ref grid_preview) = state.grid_preview {
+                let page_nav = if let Some(ref _grid_preview) = state.grid_preview {
                     if let Some(ref page_navigation) = state.page_navigation {
                         row![
                             button("Previous")
