@@ -15,11 +15,12 @@ Magic Card Proxy Sheet Generator - A Rust GUI application that creates PDF proxy
 
 ## Current Issue: Meld Card Bug Investigation (January 9, 2025)
 
-**Status**: Identified root cause, needs fix implementation
+**Status**: ✅ RESOLVED - Fixed pagination logic for meld cards
 
-### Problem
-- Gisela shows correctly: Gisela front + Brisela meld result ✅
-- Bruna shows incorrectly: Bruna front + Bruna front (instead of Brisela) ❌
+### Problem (FIXED)
+- ~~Gisela shows correctly: Gisela front + Brisela meld result ✅~~
+- ~~Bruna shows incorrectly: Bruna front + Bruna front (instead of Brisela) ❌~~
+- **Fix Applied**: Corrected grid preview pagination logic to properly handle meld result images across page boundaries
 
 ### Root Cause Analysis (Completed)
 1. **✅ Meld resolution logic works**: API calls succeed, debug logs confirm "Found meld result 'brisela, voice of nightmares'"
@@ -363,6 +364,7 @@ This is a Rust workspace with multiple crates:
   - **Entry-Based Print Selection**: One print choice per decklist entry affects all copies
   - **Page Navigation**: Multi-page navigation for large decklists
   - **Double-Faced Card Support**: Intelligent face detection and mode selection
+  - **Expandable Advanced Options Sidebar**: Toggleable sidebar with card name database and image cache management
 
 ### CLI Example (`magic-proxy-cli/`)
 - `src/main.rs` - Command-line interface demonstrating core functionality
@@ -644,3 +646,55 @@ Successfully resolved potential inconsistency between grid preview and PDF gener
 - **Bulk operations**: Select printings for multiple entries at once
 - **Export preferences**: Save and reuse print selection preferences
 - **Preview export**: Save preview grids as images for sharing
+
+## Recent UI/UX Improvements (2025-08-10)
+
+### Interface Consistency and Layout ✅
+Successfully improved the user interface with consistent styling and better information organization:
+
+#### Key UI Changes Made:
+1. **Unified Font Sizing**: Added `UI_FONT_SIZE` constant (14pt) applied across all button text and labels
+2. **Button Layout Consistency**: All action buttons use consistent width and typography
+3. **Expandable Advanced Options Sidebar**: 
+   - Toggleable sidebar (480px wide, controlled by `ADVANCED_SIDEBAR_WIDTH` constant)
+   - Appears adjacent to main content (no "desert" of empty space)  
+   - Toggle button clearly labeled "Advanced Options"
+   - Contains visually separated sections for different functionality
+4. **Clear Information Architecture**: Moved less frequently needed information to collapsible sidebar
+5. **Status Display Repositioning**: Moved status messages below button row for better visual flow
+
+#### Advanced Options Sidebar Design:
+- **Card Name Database Section**: Light green background, contains update button and cache statistics
+- **Image Cache Section**: Light blue background, shows cache size and image count  
+- **Visual Separation**: Each section has distinct styling with subtle borders and tinted backgrounds
+- **Consistent Typography**: Section headers at 16pt, details with bullet points at 12pt
+- **Compact Layout**: Sidebar positioned directly next to main content, avoiding wasted screen space
+
+#### New Constants Added:
+```rust
+const UI_FONT_SIZE: u16 = 14;                    // Consistent font sizing
+const ADVANCED_SIDEBAR_WIDTH: f32 = 480.0;      // Sidebar width management
+```
+
+#### New Message Types:
+```rust
+pub enum Message {
+    // ... existing messages ...
+    ToggleExtendedPanel,  // Show/hide advanced options sidebar
+}
+```
+
+#### AppState Extensions:
+```rust
+pub struct AppState {
+    // ... existing fields ...
+    show_extended_panel: bool,  // Track sidebar visibility state
+}
+```
+
+#### Benefits Achieved:
+- **Professional Interface**: Consistent typography and spacing throughout the application
+- **Better Information Hierarchy**: Advanced options hidden by default but easily accessible
+- **Improved Usability**: Clear button labels and logical grouping of functionality  
+- **Maintainable Design**: Global constants make UI tweaking simple and consistent
+- **Space Efficiency**: Sidebar appears adjacent to content rather than creating empty screen areas
