@@ -2,6 +2,7 @@ use iced::widget::{
     button, column, container, image, pick_list, row, scrollable, text, text_editor,
 };
 use iced::{Element, Length, Task};
+use iced::widget::{horizontal_space, rule};
 use magic_proxy_core::{
     BackgroundLoadHandle, BackgroundLoadProgress, Card, DecklistEntry, DoubleFaceMode,
     LoadingPhase, PdfOptions, ProxyGenerator, force_update_card_lookup, get_cached_image_bytes,
@@ -23,6 +24,8 @@ const PRINT_SELECTION_ROWS: usize = 3;
 const PRINTS_PER_PAGE: usize = PRINT_SELECTION_COLUMNS * PRINT_SELECTION_ROWS;
 // Font size constant for UI consistency
 const UI_FONT_SIZE: u16 = 14;
+// Advanced options sidebar width
+const ADVANCED_SIDEBAR_WIDTH: f32 = 480.0;
 
 /// Reusable paginated card grid component
 #[derive(Debug, Clone)]
@@ -275,6 +278,7 @@ pub enum Message {
     ForceUpdateCardNames,
     CardNamesUpdated(Result<String, String>),
     DoubleFaceModeChanged(DoubleFaceMode),
+    ToggleExtendedPanel,
 
     // Grid preview lifecycle
     BuildGridPreview,
@@ -311,6 +315,7 @@ pub struct AppState {
     generated_pdf: Option<Vec<u8>>,
     is_updating_card_names: bool,
     double_face_mode: DoubleFaceMode,
+    show_extended_panel: bool,
 
     // New preview-related fields
     grid_preview: Option<GridPreview>,
@@ -349,6 +354,7 @@ impl AppState {
             generated_pdf: None,
             is_updating_card_names: false,
             double_face_mode: DoubleFaceMode::BothSides,
+            show_extended_panel: false,
 
             // Initialize new preview fields
             grid_preview: None,
@@ -984,6 +990,9 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
         Message::DoubleFaceModeChanged(mode) => {
             state.double_face_mode = mode;
         }
+        Message::ToggleExtendedPanel => {
+            state.show_extended_panel = !state.show_extended_panel;
+        }
     }
     Task::none()
 }
@@ -1146,43 +1155,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
     let display_section = column![text(&state.display_text).size(16),].spacing(10);
 
-    let update_section = column![
-        row![
-            text("Card Name Database:").size(16),
-            button(if state.is_updating_card_names {
-                "Updating..."
-            } else {
-                "Update Card Names"
-            })
-            .on_press_maybe(if state.is_updating_card_names {
-                None
-            } else {
-                Some(Message::ForceUpdateCardNames)
-            })
-            .padding(10),
-        ]
-        .spacing(10),
-        text(
-            get_card_name_cache_info()
-                .map(|(timestamp, count)| {
-                    format!(
-                        "Card names: {} cached, last updated: {}",
-                        count,
-                        timestamp
-                            .format(&time::format_description::well_known::Rfc3339)
-                            .unwrap_or_else(|_| "Unknown".to_string())
-                    )
-                })
-                .unwrap_or_else(|| "No card name cache found".to_string())
-        )
-        .size(12),
-        text({
-            let (count, size_mb) = get_image_cache_info();
-            format!("Images: {} cached, {:.1} MB", count, size_mb)
-        })
-        .size(12),
-    ]
-    .spacing(5);
+    // Note: update_section content moved to sidebar sections
 
     // Always-visible 3x3 grid section - shows empty placeholders before parsing, gets populated as cards are processed
     let grid_preview_section = {
@@ -1487,18 +1460,164 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
         }
     };
 
-    let content = column![
+    // Main content column (without update_section which moves to sidebar)
+    let main_content = column![
         top_section,
         display_section,
         grid_preview_section,
         pdf_status_section,
-        update_section,
         error_section,
     ]
-    .spacing(20)
-    .padding(20);
+    .spacing(20);
 
-    scrollable(content)
+    // Extended panel (sidebar) that appears adjacent to main content
+    let extended_panel = if state.show_extended_panel {
+        Some(
+            container(
+                column![
+                    row![
+                        text("Advanced Options").size(16),
+                        horizontal_space(),
+                        button("×")
+                            .on_press(Message::ToggleExtendedPanel)
+                            .padding(5)
+                    ],
+                    rule::Rule::horizontal(1.0),
+                    // Card Name Database Section
+                    container(
+                        column![
+                            text("Card Name Database").size(16),
+                            row![
+                                button(if state.is_updating_card_names {
+                                    "Updating..."
+                                } else {
+                                    "Update Card Names"
+                                })
+                                .on_press_maybe(if state.is_updating_card_names {
+                                    None
+                                } else {
+                                    Some(Message::ForceUpdateCardNames)
+                                })
+                                .padding(8),
+                            ]
+                            .spacing(10),
+                            text(
+                                get_card_name_cache_info()
+                                    .map(|(timestamp, count)| {
+                                        format!(
+                                            "• {} card names cached\n• Last updated: {}",
+                                            count,
+                                            timestamp
+                                                .format(&time::format_description::well_known::Rfc3339)
+                                                .unwrap_or_else(|_| "Unknown".to_string())
+                                        )
+                                    })
+                                    .unwrap_or_else(|| "• No card name cache found".to_string())
+                            )
+                            .size(12)
+,
+                        ]
+                        .spacing(8)
+                    )
+                    .style(|_theme| container::Style {
+                        background: Some(iced::Color::from_rgb(0.96, 0.98, 0.96).into()),
+                        border: iced::Border {
+                            color: iced::Color::from_rgb(0.85, 0.9, 0.85),
+                            width: 1.0,
+                            radius: 3.0.into(),
+                        },
+                        ..Default::default()
+                    })
+                    .padding(12),
+                    
+                    // Image Cache Section  
+                    container(
+                        column![
+                            text("Image Cache").size(16),
+                            text({
+                                let (count, size_mb) = get_image_cache_info();
+                                format!("• {} images cached\n• {:.1} MB total size", count, size_mb)
+                            })
+                            .size(12)
+,
+                        ]
+                        .spacing(8)
+                    )
+                    .style(|_theme| container::Style {
+                        background: Some(iced::Color::from_rgb(0.96, 0.96, 0.98).into()),
+                        border: iced::Border {
+                            color: iced::Color::from_rgb(0.85, 0.85, 0.9),
+                            width: 1.0,
+                            radius: 3.0.into(),
+                        },
+                        ..Default::default()
+                    })
+                    .padding(12),
+                ]
+                .spacing(10)
+            )
+            .style(|_theme| container::Style {
+                background: Some(iced::Color::from_rgb(0.98, 0.98, 0.98).into()),
+                border: iced::Border {
+                    color: iced::Color::from_rgb(0.9, 0.9, 0.9),
+                    width: 1.0,
+                    radius: 4.0.into(),
+                },
+                ..Default::default()
+            })
+            .padding(15)
+            .width(Length::Fixed(ADVANCED_SIDEBAR_WIDTH))
+        )
+    } else {
+        None
+    };
+
+    // Toggle button for the sidebar (when collapsed)
+    let sidebar_toggle = if !state.show_extended_panel {
+        Some(
+            container(
+                button(text("Advanced Options").size(UI_FONT_SIZE))
+                    .on_press(Message::ToggleExtendedPanel)
+                    .padding(8)
+                    .style(|_theme, _status| button::Style {
+                        background: Some(iced::Color::from_rgb(0.95, 0.95, 0.95).into()),
+                        border: iced::Border {
+                            color: iced::Color::from_rgb(0.8, 0.8, 0.8),
+                            width: 1.0,
+                            radius: 4.0.into(),
+                        },
+                        text_color: iced::Color::from_rgb(0.4, 0.4, 0.4),
+                        ..Default::default()
+                    })
+            )
+            .align_y(iced::alignment::Vertical::Top)
+            .padding(10) // Small margin from main content
+        )
+    } else {
+        None
+    };
+
+    // Layout: main content + optional sidebar toggle + optional extended panel
+    let layout = if let Some(panel) = extended_panel {
+        row![
+            main_content,
+            panel
+        ]
+        .spacing(15) // Small gap between main content and sidebar
+    } else if let Some(toggle) = sidebar_toggle {
+        row![
+            main_content,
+            toggle
+        ]
+        .spacing(0) // No gap for the small toggle button
+    } else {
+        row![main_content] // Fallback (shouldn't happen)
+    };
+
+    scrollable(
+        container(layout)
+            .padding(20)
+    )
         .width(Length::Fill)
         .height(Length::Fill)
         .into()
