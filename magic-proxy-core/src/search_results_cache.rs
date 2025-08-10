@@ -196,8 +196,7 @@ mod tests {
             set: format!("set{}", i),
             language: "en".to_string(),
             border_crop: format!("https://example.com/image{}.jpg", i),
-            border_crop_back: None,
-            meld_result: None,
+            back_side: None,
         }).collect();
         
         CardSearchResult {

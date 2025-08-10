@@ -284,35 +284,13 @@ fn get_image_urls_for_face_mode(
     card: &crate::scryfall::models::Card,
     face_mode: &DoubleFaceMode,
 ) -> Vec<String> {
-    let mut urls = Vec::new();
-    
-    match face_mode {
-        DoubleFaceMode::FrontOnly => {
-            urls.push(card.border_crop.clone());
-        }
-        DoubleFaceMode::BackOnly => {
-            if let Some(ref back_url) = card.border_crop_back {
-                urls.push(back_url.clone());
-            } else {
-                // Fallback to front if no back available
-                urls.push(card.border_crop.clone());
-            }
-        }
-        DoubleFaceMode::BothSides => {
-            urls.push(card.border_crop.clone());
-            if let Some(ref back_url) = card.border_crop_back {
-                urls.push(back_url.clone());
-            }
-        }
-    }
-    
-    urls
+    card.get_images_for_face_mode(face_mode)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::scryfall::models::Card;
+    use crate::scryfall::models::{Card, BackSide};
     
     #[test]
     fn test_select_card_from_printings_with_set_preference() {
@@ -322,16 +300,14 @@ mod tests {
                 set: "LEA".to_string(),
                 language: "en".to_string(),
                 border_crop: "url1".to_string(),
-                border_crop_back: None,
-                meld_result: None,
+                back_side: None,
             },
             Card {
                 name: "Lightning Bolt".to_string(),
                 set: "VMA".to_string(),
                 language: "en".to_string(),
                 border_crop: "url2".to_string(),
-                border_crop_back: None,
-                meld_result: None,
+                back_side: None,
             },
         ];
         
@@ -355,8 +331,10 @@ mod tests {
             set: "TST".to_string(),
             language: "en".to_string(),
             border_crop: "front_url".to_string(),
-            border_crop_back: Some("back_url".to_string()),
-            meld_result: None,
+            back_side: Some(BackSide::DfcBack {
+                image_url: "back_url".to_string(),
+                name: "Test Card Back".to_string(),
+            }),
         };
         
         // Test FrontOnly

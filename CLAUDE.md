@@ -11,6 +11,47 @@ Magic Card Proxy Sheet Generator - A Rust GUI application that creates PDF proxy
 - **Fuzzy Name Matching**: Advanced card name resolution with support for split cards and alternative names  
 - **Flexible Set/Language Support**: Parse set codes (2-6 characters) and language specifications in decklists
 - **Comprehensive Caching**: Multi-layer caching for images, search results, card names, and set codes
+- **Meld Card Support**: Handles Magic meld cards (Gisela/Bruna → Brisela) with proper resolution and display
+
+## Current Issue: Meld Card Bug Investigation (January 9, 2025)
+
+**Status**: Identified root cause, needs fix implementation
+
+### Problem
+- Gisela shows correctly: Gisela front + Brisela meld result ✅
+- Bruna shows incorrectly: Bruna front + Bruna front (instead of Brisela) ❌
+
+### Root Cause Analysis (Completed)
+1. **✅ Meld resolution logic works**: API calls succeed, debug logs confirm "Found meld result 'brisela, voice of nightmares'"
+2. **✅ Scryfall API returns correct data**: Direct API query shows proper Brisela cards with correct image URLs
+3. **❌ Bug in result selection logic**: The issue is in `resolve_meld_result()` set matching/fallback logic
+
+### Technical Details
+**Problem Location**: `magic-proxy-core/src/scryfall/api.rs:137-142`
+```rust
+let meld_card = meld_search_result.cards
+    .iter()
+    .find(|meld_card| meld_card.set == card.set)
+    .or_else(|| meld_search_result.cards.first()) // BUG: May select wrong card
+```
+
+**Issue**: When searching for "brisela, voice of nightmares", somehow Bruna cards are getting into `meld_search_result.cards` despite the exact name filtering in `search_card_internal()`. The `.first()` fallback then selects Bruna instead of Brisela.
+
+### Evidence
+- **Cache data shows**: Bruna's `meld_result_image_url` = `6fccdb60-5fce-4a6e-a709-b986f9a4b653.jpg` (Bruna's front image)
+- **API returns**: Only legitimate Brisela cards with proper Brisela image URLs
+- **Conclusion**: Name filtering logic is failing, allowing wrong cards through
+
+### Next Steps
+1. **Debug the exact name filtering** in `search_card_internal()` - why are Bruna cards passing the filter?
+2. **Fix result selection logic** - ensure fallback only selects cards with correct names
+3. **Add validation** - verify selected meld result has expected name before assignment
+4. **Test thoroughly** with both Gisela and Bruna to confirm fix
+
+### Files Involved
+- `magic-proxy-core/src/scryfall/api.rs` - Meld resolution logic (lines 120-155)
+- `magic-proxy-core/src/scryfall/models.rs` - Card data model with BackSide enum
+- Search results cache: `/Users/mathiasritzmann/Library/Caches/magic-proxy/search_results_cache.json`
 
 ## Key Dependencies
 

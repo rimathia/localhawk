@@ -1,7 +1,7 @@
+use crate::DoubleFaceMode;
+use lazy_static::lazy_static;
 use regex::{Match, Regex};
 use std::collections::HashSet;
-use lazy_static::lazy_static;
-use crate::DoubleFaceMode;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct DecklistEntry {
@@ -9,8 +9,8 @@ pub struct DecklistEntry {
     pub name: String,
     pub set: Option<String>,
     pub lang: Option<String>,
-    pub face_mode: DoubleFaceMode, // Fully resolved face mode (replaces preferred_face)
-    pub source_line_number: Option<usize>, // Which line in the original decklist this came from (0-indexed)
+    pub face_mode: DoubleFaceMode,         // Fully resolved face mode
+    pub source_line_number: Option<usize>, // Which line in the original decklist this came from (0-indexed), at present only used for printing
 }
 
 impl DecklistEntry {
@@ -67,11 +67,14 @@ fn parse_multiple(group: Option<Match>) -> i32 {
     }
 }
 
-
-fn parse_set_and_lang(group: Option<Match>, languages: &HashSet<String>, set_codes: &HashSet<String>) -> (Option<String>, Option<String>) {
+fn parse_set_and_lang(
+    group: Option<Match>,
+    languages: &HashSet<String>,
+    set_codes: &HashSet<String>,
+) -> (Option<String>, Option<String>) {
     if let Some(code) = group {
         let code_str = code.as_str().to_lowercase();
-        
+
         if set_codes.contains(&code_str) {
             // It's a valid set code
             (Some(code_str), None)
@@ -87,14 +90,18 @@ fn parse_set_and_lang(group: Option<Match>, languages: &HashSet<String>, set_cod
     }
 }
 
-pub fn parse_line(line: &str, languages: &HashSet<String>, set_codes: &HashSet<String>) -> Option<DecklistEntry> {
+pub fn parse_line(
+    line: &str,
+    languages: &HashSet<String>,
+    set_codes: &HashSet<String>,
+) -> Option<DecklistEntry> {
     let trimmed = line.trim();
-    
+
     // Skip comment lines
     if trimmed.starts_with("//") || trimmed.starts_with('#') {
         return None;
     }
-    
+
     lazy_static! {
         static ref REMNS: Regex =
             Regex::new(r"^\s*(\d*)\s*([^\(\[\$\t]*)[\s\(\[]*([\dA-Za-z]{2,6})?").unwrap();
@@ -106,7 +113,13 @@ pub fn parse_line(line: &str, languages: &HashSet<String>, set_codes: &HashSet<S
             let name = mns.get(2)?.as_str().trim().to_string();
             let set_or_lang = mns.get(3);
             let (set, lang) = parse_set_and_lang(set_or_lang, languages, set_codes);
-            log::debug!("Parsed decklist line '{}' -> name: '{}', set: {:?}, lang: {:?}", line.trim(), name, set, lang);
+            log::debug!(
+                "Parsed decklist line '{}' -> name: '{}', set: {:?}, lang: {:?}",
+                line.trim(),
+                name,
+                set,
+                lang
+            );
             let name_lowercase = name.to_lowercase();
             let non_entries = ["deck", "decklist", "sideboard"];
             if non_entries.iter().any(|s| **s == name_lowercase) {
@@ -118,7 +131,7 @@ pub fn parse_line(line: &str, languages: &HashSet<String>, set_codes: &HashSet<S
                     set,
                     lang,
                     face_mode: DoubleFaceMode::BothSides, // Default for basic parsing
-                    source_line_number: None, // Will be set by caller if needed
+                    source_line_number: None,             // Will be set by caller if needed
                 })
             }
         }
@@ -144,10 +157,7 @@ pub fn parse_decklist<'a>(
                 if let Some(ref mut e) = entry {
                     e.source_line_number = Some(line_num);
                 }
-                Some(ParsedDecklistLine {
-                    line: s,
-                    entry,
-                })
+                Some(ParsedDecklistLine { line: s, entry })
             }
         })
         .collect()
@@ -352,18 +362,17 @@ mod tests {
     fn line_number_tracking() {
         let decklist = "// Comment line\n2 Lightning Bolt\n\n1 Counterspell\n// Another comment\n3 Giant Growth";
         let parsed = parse_decklist_default(decklist);
-        
-        
+
         // Check that parsed entries have correct line numbers
         let entries: Vec<&DecklistEntry> = parsed.iter().filter_map(|p| p.entry.as_ref()).collect();
-        
+
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[0].name, "Lightning Bolt");
         assert_eq!(entries[0].source_line_number, Some(1)); // Line "2 Lightning Bolt"
-        
-        assert_eq!(entries[1].name, "Counterspell"); 
+
+        assert_eq!(entries[1].name, "Counterspell");
         assert_eq!(entries[1].source_line_number, Some(3)); // Line "1 Counterspell"
-        
+
         assert_eq!(entries[2].name, "Giant Growth");
         assert_eq!(entries[2].source_line_number, Some(5)); // Line "3 Giant Growth"
     }
@@ -424,40 +433,87 @@ mod tests {
     fn test_various_set_codes_and_languages() {
         // Test with actual set codes from cache and various languages
         let mut set_codes = std::collections::HashSet::new();
-        set_codes.insert("bro".to_string());     // 3 chars - standard
-        set_codes.insert("plst".to_string());    // 4 chars - special product
-        set_codes.insert("pakh".to_string());    // 4 chars - promo
-        set_codes.insert("h2r".to_string());     // 3 chars with number
-        set_codes.insert("pmps08".to_string());  // 6 chars - long promo code
-        set_codes.insert("30a".to_string());     // 3 chars starting with number
-        
+        set_codes.insert("bro".to_string()); // 3 chars - standard
+        set_codes.insert("plst".to_string()); // 4 chars - special product
+        set_codes.insert("pakh".to_string()); // 4 chars - promo
+        set_codes.insert("h2r".to_string()); // 3 chars with number
+        set_codes.insert("pmps08".to_string()); // 6 chars - long promo code
+        set_codes.insert("30a".to_string()); // 3 chars starting with number
+
         let languages = get_minimal_scryfall_languages();
-        
+
         let test_cases = vec![
-            ("1 Lightning Bolt [BRO]", Some(DecklistEntry::new(1, "Lightning Bolt", Some("bro"), None))),
-            ("2 Cut // Ribbons [PLST]", Some(DecklistEntry::new(2, "Cut // Ribbons", Some("plst"), None))),
-            ("3 Kabira Takedown [PAKH]", Some(DecklistEntry::new(3, "Kabira Takedown", Some("pakh"), None))),
-            ("4 Memory Lapse [JA]", Some(DecklistEntry::new(4, "Memory Lapse", None, Some("ja")))),
-            ("1 Brainstorm [FR]", Some(DecklistEntry::new(1, "Brainstorm", None, Some("fr")))),
-            ("2 Giant Growth [DE]", Some(DecklistEntry::new(2, "Giant Growth", None, Some("de")))),
-            ("1 Black Lotus [H2R]", Some(DecklistEntry::new(1, "Black Lotus", Some("h2r"), None))),
-            ("3 Ancestral Recall [PMPS08]", Some(DecklistEntry::new(3, "Ancestral Recall", Some("pmps08"), None))),
-            ("1 Time Walk [30A]", Some(DecklistEntry::new(1, "Time Walk", Some("30a"), None))),
-            ("5 Counterspell", Some(DecklistEntry::new(5, "Counterspell", None, None))), // No set/lang
+            (
+                "1 Lightning Bolt [BRO]",
+                Some(DecklistEntry::new(1, "Lightning Bolt", Some("bro"), None)),
+            ),
+            (
+                "2 Cut // Ribbons [PLST]",
+                Some(DecklistEntry::new(2, "Cut // Ribbons", Some("plst"), None)),
+            ),
+            (
+                "3 Kabira Takedown [PAKH]",
+                Some(DecklistEntry::new(3, "Kabira Takedown", Some("pakh"), None)),
+            ),
+            (
+                "4 Memory Lapse [JA]",
+                Some(DecklistEntry::new(4, "Memory Lapse", None, Some("ja"))),
+            ),
+            (
+                "1 Brainstorm [FR]",
+                Some(DecklistEntry::new(1, "Brainstorm", None, Some("fr"))),
+            ),
+            (
+                "2 Giant Growth [DE]",
+                Some(DecklistEntry::new(2, "Giant Growth", None, Some("de"))),
+            ),
+            (
+                "1 Black Lotus [H2R]",
+                Some(DecklistEntry::new(1, "Black Lotus", Some("h2r"), None)),
+            ),
+            (
+                "3 Ancestral Recall [PMPS08]",
+                Some(DecklistEntry::new(
+                    3,
+                    "Ancestral Recall",
+                    Some("pmps08"),
+                    None,
+                )),
+            ),
+            (
+                "1 Time Walk [30A]",
+                Some(DecklistEntry::new(1, "Time Walk", Some("30a"), None)),
+            ),
+            (
+                "5 Counterspell",
+                Some(DecklistEntry::new(5, "Counterspell", None, None)),
+            ), // No set/lang
         ];
-        
+
         for (input, expected) in test_cases {
             let result = parse_line(input, &languages, &set_codes);
             match (&result, &expected) {
                 (Some(parsed), Some(exp)) => {
-                    assert_eq!(parsed.multiple, exp.multiple, "Multiple mismatch for: {}", input);
+                    assert_eq!(
+                        parsed.multiple, exp.multiple,
+                        "Multiple mismatch for: {}",
+                        input
+                    );
                     assert_eq!(parsed.name, exp.name, "Name mismatch for: {}", input);
                     assert_eq!(parsed.set, exp.set, "Set mismatch for: {}", input);
                     assert_eq!(parsed.lang, exp.lang, "Language mismatch for: {}", input);
-                    assert_eq!(parsed.face_mode, DoubleFaceMode::BothSides, "Face mode should be BothSides for: {}", input);
-                },
-                (None, None) => {}, // Both None, test passes
-                _ => panic!("Mismatch for input '{}': got {:?}, expected {:?}", input, result, expected),
+                    assert_eq!(
+                        parsed.face_mode,
+                        DoubleFaceMode::BothSides,
+                        "Face mode should be BothSides for: {}",
+                        input
+                    );
+                }
+                (None, None) => {} // Both None, test passes
+                _ => panic!(
+                    "Mismatch for input '{}': got {:?}, expected {:?}",
+                    input, result, expected
+                ),
             }
         }
     }

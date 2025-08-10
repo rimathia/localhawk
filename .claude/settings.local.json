@@ -21,7 +21,10 @@
       "Bash(cargo run:*)",
       "Bash(cargo doc:*)",
       "Bash(sed:*)",
-      "Bash(env RUST_LOG=magic_proxy_core=debug cargo run -p magic-proxy-gui)"
+      "Bash(env RUST_LOG=magic_proxy_core=debug cargo run -p magic-proxy-gui)",
+      "Bash(env RUST_LOG=debug cargo run --bin magic-proxy-cli search \"Gisela, the Broken Blade\")",
+      "Bash(jq:*)",
+      "Bash(curl:*)"
     ],
     "deny": []
   }

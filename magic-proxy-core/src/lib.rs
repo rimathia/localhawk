@@ -200,33 +200,12 @@ impl ProxyGenerator {
             for _ in 0..*quantity {
                 progress_callback(current_progress, total_images);
 
-                match options.double_face_mode {
-                    DoubleFaceMode::FrontOnly => {
-                        // Always include front face
-                        let front_image = get_or_fetch_image(&card.border_crop).await?;
-                        images.push(front_image);
-                    }
-                    DoubleFaceMode::BackOnly => {
-                        // Include back face if it exists, otherwise front face
-                        if let Some(back_url) = &card.border_crop_back {
-                            let back_image = get_or_fetch_image(back_url).await?;
-                            images.push(back_image);
-                        } else {
-                            let front_image = get_or_fetch_image(&card.border_crop).await?;
-                            images.push(front_image);
-                        }
-                    }
-                    DoubleFaceMode::BothSides => {
-                        // Include front face
-                        let front_image = get_or_fetch_image(&card.border_crop).await?;
-                        images.push(front_image);
-                        
-                        // Include back face if it exists
-                        if let Some(back_url) = &card.border_crop_back {
-                            let back_image = get_or_fetch_image(back_url).await?;
-                            images.push(back_image);
-                        }
-                    }
+                // Get image URLs for this card based on the face mode
+                let image_urls = card.get_images_for_face_mode(&options.double_face_mode);
+                
+                for image_url in image_urls {
+                    let image = get_or_fetch_image(&image_url).await?;
+                    images.push(image);
                 }
 
                 current_progress += 1;
@@ -242,28 +221,7 @@ impl ProxyGenerator {
     /// Get the image URLs that should be used for a given card and face mode
     /// This is the core logic extracted from PDF generation for reuse in grid preview
     pub fn get_image_urls_for_face_mode(card: &Card, face_mode: &DoubleFaceMode) -> Vec<String> {
-        match face_mode {
-            DoubleFaceMode::FrontOnly => {
-                // Always include front face
-                vec![card.border_crop.clone()]
-            }
-            DoubleFaceMode::BackOnly => {
-                // Include back face if it exists, otherwise front face
-                if let Some(back_url) = &card.border_crop_back {
-                    vec![back_url.clone()]
-                } else {
-                    vec![card.border_crop.clone()]
-                }
-            }
-            DoubleFaceMode::BothSides => {
-                // Include front face and back face if it exists
-                let mut urls = vec![card.border_crop.clone()];
-                if let Some(back_url) = &card.border_crop_back {
-                    urls.push(back_url.clone());
-                }
-                urls
-            }
-        }
+        card.get_images_for_face_mode(face_mode)
     }
 
     /// Generate PDF from a list of cards with per-card face mode (static method using global state)
@@ -290,33 +248,12 @@ impl ProxyGenerator {
             for _ in 0..*quantity {
                 progress_callback(current_progress, total_images);
 
-                match face_mode {
-                    DoubleFaceMode::FrontOnly => {
-                        // Always include front face
-                        let front_image = get_or_fetch_image(&card.border_crop).await?;
-                        images.push(front_image);
-                    }
-                    DoubleFaceMode::BackOnly => {
-                        // Include back face if it exists, otherwise front face
-                        if let Some(back_url) = &card.border_crop_back {
-                            let back_image = get_or_fetch_image(back_url).await?;
-                            images.push(back_image);
-                        } else {
-                            let front_image = get_or_fetch_image(&card.border_crop).await?;
-                            images.push(front_image);
-                        }
-                    }
-                    DoubleFaceMode::BothSides => {
-                        // Include front face
-                        let front_image = get_or_fetch_image(&card.border_crop).await?;
-                        images.push(front_image);
-                        
-                        // Include back face if it exists
-                        if let Some(back_url) = &card.border_crop_back {
-                            let back_image = get_or_fetch_image(back_url).await?;
-                            images.push(back_image);
-                        }
-                    }
+                // Get image URLs for this card based on the face mode
+                let image_urls = card.get_images_for_face_mode(face_mode);
+                
+                for image_url in image_urls {
+                    let image = get_or_fetch_image(&image_url).await?;
+                    images.push(image);
                 }
 
                 current_progress += 1;
@@ -353,14 +290,12 @@ impl ProxyGenerator {
             for _ in 0..*quantity {
                 progress_callback(current_progress, total_images);
 
-                // Get front image using global cache
-                let front_image = get_or_fetch_image(&card.border_crop).await?;
-                images.push(front_image);
-
-                // Get back image if it exists
-                if let Some(back_url) = &card.border_crop_back {
-                    let back_image = get_or_fetch_image(back_url).await?;
-                    images.push(back_image);
+                // Get image URLs for this card (both front and back if exists)
+                let image_urls = card.get_images_for_face_mode(&DoubleFaceMode::BothSides);
+                
+                for image_url in image_urls {
+                    let image = get_or_fetch_image(&image_url).await?;
+                    images.push(image);
                 }
 
                 current_progress += 1;
@@ -451,8 +386,7 @@ mod tests {
             set: "test".to_string(),
             language: "en".to_string(),
             border_crop: "http://example.com/test.jpg".to_string(),
-            border_crop_back: None,
-            meld_result: None,
+            back_side: None,
         };
 
         // Test adding card
@@ -531,8 +465,7 @@ mod tests {
             set: "test".to_string(),
             language: "en".to_string(),
             border_crop: "http://example.com/test.jpg".to_string(),
-            border_crop_back: None,
-            meld_result: None,
+            back_side: None,
         };
         generator.add_card(card, 1);
 

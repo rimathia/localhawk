@@ -373,7 +373,7 @@ fn _calculate_actual_card_count(entry: &DecklistEntry, card: &Card) -> usize {
         }
         DoubleFaceMode::BothSides => {
             // 1 or 2 images per copy depending on whether card has back
-            if card.border_crop_back.is_some() {
+            if card.has_back_side() {
                 base_count * 2 // Front + back
             } else {
                 base_count // Front only
@@ -1132,7 +1132,7 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
     Task::none()
 }
 
-pub fn view(state: &AppState) -> Element<Message> {
+pub fn view(state: &AppState) -> Element<'_, Message> {
     // Left side: Decklist input (text field only)
     let decklist_input_section = column![
         text("Decklist Parser:").size(18),
