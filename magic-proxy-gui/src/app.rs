@@ -21,6 +21,8 @@ const THUMBNAIL_HEIGHT: f32 = GRID_CARD_HEIGHT;
 const PRINT_SELECTION_COLUMNS: usize = 5;
 const PRINT_SELECTION_ROWS: usize = 3;
 const PRINTS_PER_PAGE: usize = PRINT_SELECTION_COLUMNS * PRINT_SELECTION_ROWS;
+// Font size constant for UI consistency
+const UI_FONT_SIZE: u16 = 14;
 
 /// Reusable paginated card grid component
 #[derive(Debug, Clone)]
@@ -266,7 +268,6 @@ pub enum Message {
     DecklistAction(text_editor::Action),
     ParseDecklist,
     DecklistParsed(Vec<DecklistEntry>),
-    ClearDecklist,
     GenerateAll, // New: Parse + Generate + Save in one step
     GeneratePdf,
     PdfGenerated(Result<Vec<u8>, String>),
@@ -434,7 +435,7 @@ pub struct GridImage {
     pub copy_number: usize,      // Which copy of that entry (0-based)
     pub _image_index: usize, // Which image within that copy (for double-faced cards) - keep for future use
     pub _card: Card,         // The actual card - keep for future use
-    pub _image_url: String,   // The URL of the image to display - kept for future use
+    pub _image_url: String,  // The URL of the image to display - kept for future use
     pub page: usize,         // Which page this appears on
     pub position_in_page: usize, // Position within the 3x3 grid (0-8)
 }
@@ -844,25 +845,6 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                 }
             }
         }
-        Message::ClearDecklist => {
-            state.decklist_content = text_editor::Content::new();
-            state.parsed_cards.clear();
-            state.parsed_cards_aligned_text = text_editor::Content::new();
-            state.error_message = None;
-            state.display_text = "Decklist cleared!".to_string();
-
-            // Clear preview and navigation state
-            state.grid_preview = None;
-            state.page_navigation = None;
-            state.preview_mode = PreviewMode::Hidden;
-            state.is_building_preview = false;
-
-            // Clear background loading state
-            if let Some(handle) = state.background_load_handle.take() {
-                handle.cancel();
-            }
-            state.latest_background_progress = None;
-        }
         Message::GenerateAll => {
             // Set flag to auto-continue to PDF generation after parsing
             state.auto_generate_after_parse = true;
@@ -1020,40 +1002,62 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
     .spacing(10)
     .width(Length::Fixed(650.0)); // Container width slightly larger than text field
 
-    // Button row: independent width for proper spacing
+    // Button row: action buttons and settings with better visual grouping
     let button_row = row![
-        button(if state.is_generating_pdf && state.is_parsing {
-            "Generating PDF..."
-        } else {
-            "Generate & Save PDF"
-        })
-        .on_press_maybe(if state.is_generating_pdf || state.is_parsing {
-            None
-        } else {
-            Some(Message::GenerateAll)
-        })
-        .padding(10),
-        button(if state.is_parsing {
-            "Parsing & Building Preview..."
-        } else {
-            "Parse & Preview Decklist"
-        })
-        .on_press_maybe(if state.is_parsing {
-            None
-        } else {
-            Some(Message::ParseDecklist)
-        })
-        .padding(10),
-        button("Clear Decklist")
-            .on_press(Message::ClearDecklist)
-            .padding(10),
-        text("Face Mode:").size(14),
-        pick_list(
-            DoubleFaceMode::all(),
-            Some(state.double_face_mode.clone()),
-            Message::DoubleFaceModeChanged,
+        // Action buttons group
+        button(text("PDF from Decklist").size(UI_FONT_SIZE))
+            .on_press_maybe(if state.is_generating_pdf || state.is_parsing {
+                None
+            } else {
+                Some(Message::GenerateAll)
+            })
+            .padding(10)
+            .width(Length::Fixed(140.0)),
+        button(text("Preview").size(UI_FONT_SIZE))
+            .on_press_maybe(if state.is_parsing {
+                None
+            } else {
+                Some(Message::ParseDecklist)
+            })
+            .padding(10)
+            .width(Length::Fixed(100.0)),
+        button(text("PDF from Preview").size(UI_FONT_SIZE))
+            .on_press_maybe(
+                if state.is_generating_pdf || state.parsed_cards.is_empty() {
+                    None
+                } else {
+                    Some(Message::GeneratePdf)
+                }
+            )
+            .padding(10)
+            .width(Length::Fixed(140.0)),
+        // Visual separator
+        container(text("")).width(Length::Fixed(20.0)),
+        // Settings group
+        container(
+            row![
+                text("Face Mode:").size(UI_FONT_SIZE),
+                pick_list(
+                    DoubleFaceMode::all(),
+                    Some(state.double_face_mode.clone()),
+                    Message::DoubleFaceModeChanged,
+                )
+                .text_size(UI_FONT_SIZE)
+                .width(Length::Fixed(120.0)),
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center)
         )
-        .width(Length::Fixed(GRID_CARD_WIDTH)),
+        .style(|_theme| container::Style {
+            background: Some(iced::Color::from_rgb(0.95, 0.95, 0.95).into()),
+            border: iced::Border {
+                color: iced::Color::from_rgb(0.8, 0.8, 0.8),
+                width: 1.0,
+                radius: 4.0.into(),
+            },
+            ..Default::default()
+        })
+        .padding(8),
     ]
     .spacing(10);
 
@@ -1265,7 +1269,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                                     .find(|pos| pos.position_in_page == position_idx)
                                 {
                                     // Calculate which image this should be based on copy_number and position within that copy
-                                    
+
                                     // Find which image within the copy this position represents
                                     // by looking at all positions for this copy on all pages
                                     let copy_positions: Vec<&GridPosition> = entry
@@ -1273,15 +1277,16 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                                         .iter()
                                         .filter(|pos| pos.copy_number == grid_position.copy_number)
                                         .collect();
-                                    
+
                                     let image_index_within_copy = copy_positions
                                         .iter()
-                                        .position(|pos| 
-                                            pos.page == grid_position.page && 
-                                            pos.position_in_page == grid_position.position_in_page
-                                        )
+                                        .position(|pos| {
+                                            pos.page == grid_position.page
+                                                && pos.position_in_page
+                                                    == grid_position.position_in_page
+                                        })
                                         .unwrap_or(0);
-                                    
+
                                     let image_url = image_urls
                                         .get(image_index_within_copy)
                                         .unwrap_or(&selected_card.border_crop);
@@ -1366,27 +1371,6 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     text(grid_title).size(16),
                     page_nav,
                     column(grid_rows).spacing(0),
-                    // Generate PDF button (only show when we have parsed cards)
-                    if state.parsed_cards.is_empty() {
-                        Element::from(column![])
-                    } else {
-                        Element::from(
-                            row![
-                                button(if state.is_generating_pdf {
-                                    "Generating PDF..."
-                                } else {
-                                    "Generate & Save PDF from Preview"
-                                })
-                                .on_press_maybe(if state.is_generating_pdf {
-                                    None
-                                } else {
-                                    Some(Message::GeneratePdf)
-                                })
-                                .padding(10),
-                            ]
-                            .spacing(10),
-                        )
-                    },
                 ]
                 .spacing(10)
             }
