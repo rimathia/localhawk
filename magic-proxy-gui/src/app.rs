@@ -1489,11 +1489,11 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
     let content = column![
         top_section,
+        display_section,
         grid_preview_section,
         pdf_status_section,
         update_section,
         error_section,
-        display_section,
     ]
     .spacing(20)
     .padding(20);
