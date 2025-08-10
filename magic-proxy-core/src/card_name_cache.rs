@@ -1,11 +1,11 @@
 use crate::error::ProxyError;
-use crate::scryfall::{ScryfallClient, ScryfallCardNames};
+use crate::scryfall::{ScryfallCardNames, ScryfallClient};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use time::{Duration, OffsetDateTime};
-use tracing::{info, debug, warn};
+use tracing::{debug, info, warn};
 
 const CACHE_DURATION_DAYS: i64 = 1;
 
@@ -25,9 +25,9 @@ impl CardNameCache {
         let cache_dir = Self::get_cache_dir()?;
         fs::create_dir_all(&cache_dir)
             .map_err(|e| ProxyError::Cache(format!("Failed to create cache directory: {}", e)))?;
-        
+
         let cache_file_path = cache_dir.join("card_names.json");
-        
+
         Ok(CardNameCache { cache_file_path })
     }
 
@@ -37,11 +37,15 @@ impl CardNameCache {
             .ok_or_else(|| ProxyError::Cache("Could not determine cache directory".to_string()))
     }
 
-    pub async fn get_card_names(&self, client: &ScryfallClient, force_update: bool) -> Result<ScryfallCardNames, ProxyError> {
+    pub async fn get_card_names(
+        &self,
+        client: &ScryfallClient,
+        force_update: bool,
+    ) -> Result<ScryfallCardNames, ProxyError> {
         // Try to load from cache first (unless force update is requested)
         if !force_update {
             debug!(cache_file = %self.cache_file_path.display(), "Checking disk cache");
-            
+
             if let Ok(cached) = self.load_from_cache() {
                 let age = OffsetDateTime::now_utc() - cached.cached_at;
                 info!(
@@ -49,7 +53,7 @@ impl CardNameCache {
                     card_count = cached.data.names.len(),
                     "Loaded card names from disk cache"
                 );
-                
+
                 if self.is_cache_valid(&cached) {
                     info!("Disk cache is valid, using cached data");
                     return Ok(cached.data);
@@ -66,7 +70,7 @@ impl CardNameCache {
         // Cache miss or expired - fetch from API
         info!("Fetching fresh card names from Scryfall API");
         let card_names = client.get_card_names().await?;
-        
+
         // Save to cache
         self.save_to_cache(&card_names)?;
         info!(
@@ -74,20 +78,23 @@ impl CardNameCache {
             cache_file = %self.cache_file_path.display(),
             "Saved fresh card names to disk cache"
         );
-        
+
         Ok(card_names)
     }
 
     fn load_from_cache(&self) -> Result<CachedCardNames, ProxyError> {
         if !self.cache_file_path.exists() {
-            debug!("Cache file does not exist: {}", self.cache_file_path.display());
+            debug!(
+                "Cache file does not exist: {}",
+                self.cache_file_path.display()
+            );
             return Err(ProxyError::Cache("Cache file not found".to_string()));
         }
 
         let file_size = std::fs::metadata(&self.cache_file_path)
             .map(|m| m.len())
             .unwrap_or(0);
-        
+
         debug!(
             file_size_kb = file_size / 1024,
             "Reading cache file from disk"
@@ -95,7 +102,7 @@ impl CardNameCache {
 
         let content = fs::read_to_string(&self.cache_file_path)
             .map_err(|e| ProxyError::Cache(format!("Failed to read cache file: {}", e)))?;
-            
+
         let parsed = serde_json::from_str(&content)
             .map_err(|e| ProxyError::Cache(format!("Failed to parse cache file: {}", e)))?;
 
@@ -115,7 +122,10 @@ impl CardNameCache {
         fs::write(&self.cache_file_path, content)
             .map_err(|e| ProxyError::Cache(format!("Failed to write cache file: {}", e)))?;
 
-        log::info!("Saved card names to cache: {}", self.cache_file_path.display());
+        log::info!(
+            "Saved card names to cache: {}",
+            self.cache_file_path.display()
+        );
         Ok(())
     }
 
@@ -141,8 +151,11 @@ impl CardNameCache {
     pub fn get_cache_path(&self) -> &PathBuf {
         &self.cache_file_path
     }
-    
-    pub fn save_current_data_to_disk(&self, card_names: &ScryfallCardNames) -> Result<(), ProxyError> {
+
+    pub fn save_current_data_to_disk(
+        &self,
+        card_names: &ScryfallCardNames,
+    ) -> Result<(), ProxyError> {
         self.save_to_cache(card_names)
     }
 }

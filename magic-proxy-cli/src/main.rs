@@ -37,7 +37,7 @@ enum Commands {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-    
+
     // Initialize caches at startup
     if let Err(e) = magic_proxy_core::initialize_caches().await {
         eprintln!("Failed to initialize caches: {}", e);

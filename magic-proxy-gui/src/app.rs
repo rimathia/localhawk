@@ -1,8 +1,8 @@
 use iced::widget::{
     button, column, container, image, pick_list, row, scrollable, text, text_editor,
 };
-use iced::{Element, Length, Task};
 use iced::widget::{horizontal_space, rule};
+use iced::{Element, Length, Task};
 use magic_proxy_core::{
     BackgroundLoadHandle, BackgroundLoadProgress, Card, DecklistEntry, DoubleFaceMode,
     LoadingPhase, PdfOptions, ProxyGenerator, force_update_card_lookup, get_cached_image_bytes,
@@ -336,15 +336,8 @@ impl AppState {
         Self {
             display_text: "Welcome to Magic Card Proxy Generator!\nParsing includes fuzzy matching, set/language awareness, and card name resolution.".to_string(),
             decklist_content: text_editor::Content::with_text(
-                // "\n1 Gisela, the Broken Blade\n1 Bruna, the Fading Light\n1 Counterspell [7ED]\n// comments are ignored\n1 Memory Lapse [ja]\n1 kabira takedown\n1 kabira plateau\n1 cut // ribbons (pakh)",
-                "
-                1 Bruna, the Fading Light [V17]
-                1 Bruna, the Fading Light [V17]
-                1 Bruna, the Fading Light [V17]
-                1 Bruna, the Fading Light [V17]
-                1 Bruna, the Fading Light [V17]
-                1 Bruna, the Fading Light [V17]
-"
+                "\n1 Gisela, the Broken Blade\n1 Bruna, the Fading Light\n1 Counterspell [7ED]\n// comments are ignored\n1 Memory Lapse [ja]\n1 kabira takedown\n1 kabira plateau\n1 cut // ribbons (pakh)",
+                // "1 Bruna, the Fading Light\n[V17] 1 Bruna, the Fading Light [V17] \n1 Bruna, the Fading Light [V17] \n1 Bruna, the Fading Light [V17] \n1 Bruna, the Fading Light [V17] \n1 Bruna, the Fading Light [V17]
             ),
             parsed_cards: Vec::new(),
             parsed_cards_aligned_text: text_editor::Content::new(),
@@ -1348,11 +1341,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     .spacing(10)
                 } else {
                     // No title when no preview exists - just show the grid
-                    column![
-                        page_nav,
-                        column(grid_rows).spacing(0),
-                    ]
-                    .spacing(10)
+                    column![page_nav, column(grid_rows).spacing(0),].spacing(10)
                 }
             }
             PreviewMode::PrintSelection => {
@@ -1508,14 +1497,15 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                                             "• {} card names cached\n• Last updated: {}",
                                             count,
                                             timestamp
-                                                .format(&time::format_description::well_known::Rfc3339)
+                                                .format(
+                                                    &time::format_description::well_known::Rfc3339
+                                                )
                                                 .unwrap_or_else(|_| "Unknown".to_string())
                                         )
                                     })
                                     .unwrap_or_else(|| "• No card name cache found".to_string())
                             )
-                            .size(12)
-,
+                            .size(12),
                         ]
                         .spacing(8)
                     )
@@ -1529,8 +1519,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                         ..Default::default()
                     })
                     .padding(12),
-                    
-                    // Image Cache Section  
+                    // Image Cache Section
                     container(
                         column![
                             text("Image Cache").size(16),
@@ -1538,8 +1527,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                                 let (count, size_mb) = get_image_cache_info();
                                 format!("• {} images cached\n• {:.1} MB total size", count, size_mb)
                             })
-                            .size(12)
-,
+                            .size(12),
                         ]
                         .spacing(8)
                     )
@@ -1554,7 +1542,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     })
                     .padding(12),
                 ]
-                .spacing(10)
+                .spacing(10),
             )
             .style(|_theme| container::Style {
                 background: Some(iced::Color::from_rgb(0.98, 0.98, 0.98).into()),
@@ -1566,7 +1554,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                 ..Default::default()
             })
             .padding(15)
-            .width(Length::Fixed(ADVANCED_SIDEBAR_WIDTH))
+            .width(Length::Fixed(ADVANCED_SIDEBAR_WIDTH)),
         )
     } else {
         None
@@ -1588,10 +1576,10 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                         },
                         text_color: iced::Color::from_rgb(0.4, 0.4, 0.4),
                         ..Default::default()
-                    })
+                    }),
             )
             .align_y(iced::alignment::Vertical::Top)
-            .padding(10) // Small margin from main content
+            .padding(10), // Small margin from main content
         )
     } else {
         None
@@ -1599,25 +1587,14 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
     // Layout: main content + optional sidebar toggle + optional extended panel
     let layout = if let Some(panel) = extended_panel {
-        row![
-            main_content,
-            panel
-        ]
-        .spacing(15) // Small gap between main content and sidebar
+        row![main_content, panel].spacing(15) // Small gap between main content and sidebar
     } else if let Some(toggle) = sidebar_toggle {
-        row![
-            main_content,
-            toggle
-        ]
-        .spacing(0) // No gap for the small toggle button
+        row![main_content, toggle].spacing(0) // No gap for the small toggle button
     } else {
         row![main_content] // Fallback (shouldn't happen)
     };
 
-    scrollable(
-        container(layout)
-            .padding(20)
-    )
+    scrollable(container(layout).padding(20))
         .width(Length::Fill)
         .height(Length::Fill)
         .into()

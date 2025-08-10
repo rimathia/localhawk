@@ -14,23 +14,23 @@ fn init_logging() {
 
 fn main() -> iced::Result {
     init_logging();
-    
+
     // Initialize caches at startup
     let rt = tokio::runtime::Runtime::new().unwrap();
-    
+
     if let Err(e) = rt.block_on(magic_proxy_core::initialize_caches()) {
         eprintln!("Failed to initialize caches: {}", e);
         std::process::exit(1);
     }
-    
+
     // Run the GUI application
     let result = iced::application("Magic Card Proxy Generator", app::update, app::view)
         .run_with(app::initialize);
-    
+
     // Application has exited (user closed window), save caches before returning
     if let Err(e) = rt.block_on(magic_proxy_core::shutdown_caches()) {
         eprintln!("Warning: Failed to save caches on shutdown: {}", e);
     }
-    
+
     result
 }
