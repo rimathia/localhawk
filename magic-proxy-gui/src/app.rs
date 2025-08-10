@@ -1359,20 +1359,28 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     grid_rows.push(row(grid_row).spacing(0).into()); // No spacing between cards
                 }
 
-                let grid_title = if state.is_building_preview {
-                    "Grid Preview: Building..."
+                if state.is_building_preview {
+                    column![
+                        text("Grid Preview: Building...").size(16),
+                        page_nav,
+                        column(grid_rows).spacing(0),
+                    ]
+                    .spacing(10)
                 } else if state.grid_preview.is_some() {
-                    "Grid Preview:"
+                    column![
+                        text("Grid Preview:").size(16),
+                        page_nav,
+                        column(grid_rows).spacing(0),
+                    ]
+                    .spacing(10)
                 } else {
-                    "PDF Preview (3x3 grid):"
-                };
-
-                column![
-                    text(grid_title).size(16),
-                    page_nav,
-                    column(grid_rows).spacing(0),
-                ]
-                .spacing(10)
+                    // No title when no preview exists - just show the grid
+                    column![
+                        page_nav,
+                        column(grid_rows).spacing(0),
+                    ]
+                    .spacing(10)
+                }
             }
             PreviewMode::PrintSelection => {
                 // Print selection modal - only show when explicitly in this mode
