@@ -434,7 +434,7 @@ pub struct GridImage {
     pub copy_number: usize,      // Which copy of that entry (0-based)
     pub _image_index: usize, // Which image within that copy (for double-faced cards) - keep for future use
     pub _card: Card,         // The actual card - keep for future use
-    pub image_url: String,   // The URL of the image to display
+    pub _image_url: String,   // The URL of the image to display - kept for future use
     pub page: usize,         // Which page this appears on
     pub position_in_page: usize, // Position within the 3x3 grid (0-8)
 }
@@ -485,7 +485,7 @@ async fn build_grid_preview_from_entries_unified(
             copy_number,
             _image_index: image_index,
             _card: cards[entry_index].0.clone(),
-            image_url,
+            _image_url: image_url,
             page,
             position_in_page,
         });

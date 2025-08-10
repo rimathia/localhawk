@@ -1,7 +1,6 @@
 use crate::error::ProxyError;
 use lazy_static::lazy_static;
 use log::debug;
-use reqwest::blocking::Request;
 use tokio::time::{Duration, Instant};
 
 // Headers required according to https://scryfall.com/docs/api/
