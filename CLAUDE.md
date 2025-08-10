@@ -80,6 +80,7 @@ let meld_card = meld_search_result.cards
 ### Development Workflow
 - `cargo clean` - Remove build artifacts from target directory
 - `cargo update` - Update dependencies in Cargo.lock
+- **ALWAYS run `cargo fmt` as the final step after making any code changes** - This ensures consistent code formatting across the entire codebase
 
 ### Git Workflow (IMPORTANT)
 
