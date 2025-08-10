@@ -330,7 +330,15 @@ impl AppState {
         Self {
             display_text: "Welcome to Magic Card Proxy Generator!\nParsing includes fuzzy matching, set/language awareness, and card name resolution.".to_string(),
             decklist_content: text_editor::Content::with_text(
-                "\n1 Counterspell [7ED]\n// comments are ignored\n1 Memory Lapse [ja]\n1 kabira takedown\n1 kabira plateau\n1 cut // ribbons (pakh)\n1 Gisela, the Broken Blade\n1 Bruna, the Fading Light",
+                // "\n1 Gisela, the Broken Blade\n1 Bruna, the Fading Light\n1 Counterspell [7ED]\n// comments are ignored\n1 Memory Lapse [ja]\n1 kabira takedown\n1 kabira plateau\n1 cut // ribbons (pakh)",
+                "
+                1 Bruna, the Fading Light [INR]
+                1 Bruna, the Fading Light [EMN]
+                1 Bruna, the Fading Light [SLD]
+                1 Bruna, the Fading Light [SIR]
+                1 Bruna, the Fading Light [V17]
+                1 Bruna, the Fading Light [PEMN]
+"
             ),
             parsed_cards: Vec::new(),
             parsed_cards_aligned_text: text_editor::Content::new(),
