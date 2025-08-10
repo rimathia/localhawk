@@ -224,6 +224,100 @@ impl ProxyGenerator {
         card.get_images_for_face_mode(face_mode)
     }
 
+    /// Expand a list of cards with quantities into a sequential list of image URLs
+    /// This is the single source of truth for what images appear in the PDF and in what order
+    pub fn expand_cards_to_image_urls(cards: &[(Card, u32, DoubleFaceMode)]) -> Vec<String> {
+        let mut image_urls = Vec::new();
+        
+        for (card, quantity, face_mode) in cards {
+            for _ in 0..*quantity {
+                let urls = card.get_images_for_face_mode(face_mode);
+                image_urls.extend(urls);
+            }
+        }
+        
+        image_urls
+    }
+
+    /// Convert decklist entries to cards ready for PDF generation
+    /// This is the shared logic for both PDF generation and grid preview
+    pub async fn resolve_decklist_entries_to_cards(
+        entries: &[DecklistEntry],
+    ) -> Result<Vec<(Card, u32, DoubleFaceMode)>, ProxyError> {
+        let mut card_list = Vec::new();
+
+        for entry in entries {
+            log::debug!("Searching for card: '{}'", entry.name);
+            match Self::search_card(&entry.name).await {
+                Ok(search_result) => {
+                    log::debug!(
+                        "Found {} printings for '{}'",
+                        search_result.cards.len(),
+                        entry.name
+                    );
+
+                    // Use the same card selection logic as used in both PDF generation and grid preview
+                    let selected_card = search_result.cards
+                        .iter()
+                        .position(|c| {
+                            // First check if the card name matches what we're looking for
+                            let name_matches = c.name.to_lowercase() == entry.name.to_lowercase();
+
+                            // Try to match both set and language if specified
+                            let set_matches = if let Some(ref entry_set) = entry.set {
+                                c.set.to_lowercase() == entry_set.to_lowercase()
+                            } else {
+                                true // No set filter
+                            };
+
+                            let lang_matches = if let Some(ref entry_lang) = entry.lang {
+                                c.language.to_lowercase() == entry_lang.to_lowercase()
+                            } else {
+                                true // No language filter
+                            };
+
+                            name_matches && set_matches && lang_matches
+                        })
+                        .and_then(|idx| search_result.cards.get(idx))
+                        .or_else(|| search_result.cards.first())
+                        .cloned();
+
+                    if let Some(card) = selected_card {
+                        log::debug!(
+                            "Selected card: '{}' ({}) [{}] with face mode {:?}",
+                            card.name,
+                            card.set.to_uppercase(),
+                            card.language,
+                            entry.face_mode
+                        );
+                        card_list.push((card, entry.multiple as u32, entry.face_mode.clone()));
+                    } else {
+                        log::warn!("No suitable card found for entry '{}'", entry.name);
+                    }
+                }
+                Err(e) => {
+                    log::debug!("Failed to search for card '{}': {:?}", entry.name, e);
+                    // Skip cards that can't be found - this matches current behavior
+                }
+            }
+        }
+
+        Ok(card_list)
+    }
+
+    /// Generate PDF directly from decklist entries (highest level convenience method)
+    pub async fn generate_pdf_from_entries<F>(
+        entries: &[DecklistEntry],
+        options: PdfOptions,
+        progress_callback: F,
+    ) -> Result<Vec<u8>, ProxyError>
+    where
+        F: FnMut(usize, usize) + Send,
+    {
+        let cards = Self::resolve_decklist_entries_to_cards(entries).await?;
+        Self::generate_pdf_from_cards_with_face_modes(&cards, options, progress_callback).await
+    }
+
     /// Generate PDF from a list of cards with per-card face mode (static method using global state)
     pub async fn generate_pdf_from_cards_with_face_modes<F>(
         cards: &[(Card, u32, DoubleFaceMode)],
@@ -237,27 +331,16 @@ impl ProxyGenerator {
             return Err(ProxyError::InvalidCard("No cards to generate".to_string()));
         }
 
-        // Calculate total images needed
-        let total_images: usize = cards.iter().map(|(_, qty, _)| *qty as usize).sum();
-        let mut current_progress = 0;
+        // Use shared expansion logic to get the exact sequence of image URLs
+        let image_urls = Self::expand_cards_to_image_urls(cards);
+        let total_images = image_urls.len();
 
-        // Collect all images
+        // Download all images in sequence
         let mut images = Vec::new();
-
-        for (card, quantity, face_mode) in cards {
-            for _ in 0..*quantity {
-                progress_callback(current_progress, total_images);
-
-                // Get image URLs for this card based on the face mode
-                let image_urls = card.get_images_for_face_mode(face_mode);
-                
-                for image_url in image_urls {
-                    let image = get_or_fetch_image(&image_url).await?;
-                    images.push(image);
-                }
-
-                current_progress += 1;
-            }
+        for (current_progress, image_url) in image_urls.iter().enumerate() {
+            progress_callback(current_progress, total_images);
+            let image = get_or_fetch_image(image_url).await?;
+            images.push(image);
         }
 
         progress_callback(total_images, total_images);

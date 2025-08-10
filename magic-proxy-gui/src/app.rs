@@ -332,12 +332,12 @@ impl AppState {
             decklist_content: text_editor::Content::with_text(
                 // "\n1 Gisela, the Broken Blade\n1 Bruna, the Fading Light\n1 Counterspell [7ED]\n// comments are ignored\n1 Memory Lapse [ja]\n1 kabira takedown\n1 kabira plateau\n1 cut // ribbons (pakh)",
                 "
-                1 Bruna, the Fading Light [INR]
-                1 Bruna, the Fading Light [EMN]
-                1 Bruna, the Fading Light [SLD]
-                1 Bruna, the Fading Light [SIR]
                 1 Bruna, the Fading Light [V17]
-                1 Bruna, the Fading Light [PEMN]
+                1 Bruna, the Fading Light [V17]
+                1 Bruna, the Fading Light [V17]
+                1 Bruna, the Fading Light [V17]
+                1 Bruna, the Fading Light [V17]
+                1 Bruna, the Fading Light [V17]
 "
             ),
             parsed_cards: Vec::new(),
@@ -390,33 +390,6 @@ fn _calculate_actual_card_count(entry: &DecklistEntry, card: &Card) -> usize {
     }
 }
 
-/// Select the best card from available printings using the same logic as PDF generation
-fn select_card_from_printings(
-    available_printings: &[Card],
-    entry: &DecklistEntry,
-) -> Option<usize> {
-    // Use the same selection logic as PDF generation for consistency
-    available_printings.iter().position(|c| {
-        // First check if the card name matches what we're looking for
-        let name_matches = c.name.to_lowercase() == entry.name.to_lowercase();
-
-        // Try to match both set and language if specified
-        let set_matches = if let Some(ref entry_set) = entry.set {
-            c.set.to_lowercase() == entry_set.to_lowercase()
-        } else {
-            true // No set filter
-        };
-
-        let lang_matches = if let Some(ref entry_lang) = entry.lang {
-            c.language.to_lowercase() == entry_lang.to_lowercase()
-        } else {
-            true // No language filter
-        };
-
-        name_matches && set_matches && lang_matches
-    })
-}
-
 /// Build aligned text output: start with original decklist, replace successfully parsed lines
 /// Uses current parsed_cards state (which may have updated printings)
 fn build_aligned_parsed_output(input_text: &str, parsed_cards: &[DecklistEntry]) -> String {
@@ -467,127 +440,64 @@ pub struct GridImage {
 }
 
 /// Build grid preview using the exact same logic as PDF generation
-async fn build_grid_preview_from_entries(
+/// Build grid preview using the exact same logic as PDF generation
+/// This ensures 100% consistency between what you see and what you get
+async fn build_grid_preview_from_entries_unified(
     entries: Vec<DecklistEntry>,
 ) -> Result<GridPreview, String> {
-    let mut all_images = Vec::new();
-    let mut card_position = 0;
+    // Use the same card resolution logic as PDF generation
+    let cards = ProxyGenerator::resolve_decklist_entries_to_cards(&entries)
+        .await
+        .map_err(|e| format!("Failed to resolve cards: {}", e))?;
 
-    // Store search results to avoid duplicate API calls
-    let mut search_results = Vec::new();
+    // Use the same expansion logic as PDF generation
+    let image_urls = ProxyGenerator::expand_cards_to_image_urls(&cards);
 
-    // First pass: Process each decklist entry and store search results
-    for (entry_index, decklist_entry) in entries.iter().enumerate() {
-        log::debug!(
-            "Processing entry for grid: {}x '{}' with face mode {:?}",
-            decklist_entry.multiple,
-            decklist_entry.name,
-            decklist_entry.face_mode
-        );
+    // Convert to grid format with page/position information
+    let mut grid_images = Vec::new();
+    for (position, image_url) in image_urls.into_iter().enumerate() {
+        let page = position / 9; // 9 cards per page
+        let position_in_page = position % 9;
 
-        // Search for the card to get printings (same as PDF generation)
-        let search_result = match ProxyGenerator::search_card(&decklist_entry.name).await {
-            Ok(result) => result,
-            Err(e) => {
-                log::warn!("Failed to search for card '{}': {}", decklist_entry.name, e);
-                return Err(format!(
-                    "Failed to search for card '{}': {}",
-                    decklist_entry.name, e
-                ));
-            }
-        };
+        // Find which entry and copy this image belongs to
+        let mut current_position = 0;
+        let mut entry_index = 0;
+        let mut copy_number = 0;
+        let mut image_index = 0;
 
-        if search_result.cards.is_empty() {
-            return Err(format!(
-                "No printings found for card '{}'",
-                decklist_entry.name
-            ));
-        }
-
-        // Store search result for later reuse
-        search_results.push(search_result.clone());
-
-        // Use the same card selection logic as PDF generation
-        let selected_card = select_card_from_printings(&search_result.cards, decklist_entry)
-            .and_then(|idx| search_result.cards.get(idx))
-            .or_else(|| search_result.cards.first())
-            .cloned();
-
-        let card = match selected_card {
-            Some(card) => card,
-            None => {
-                return Err(format!(
-                    "No suitable card found for entry '{}'",
-                    decklist_entry.name
-                ));
-            }
-        };
-
-        log::debug!(
-            "Selected card: '{}' ({}) [{}] for entry '{}' ({} total printings)",
-            card.name,
-            card.set.to_uppercase(),
-            card.language,
-            decklist_entry.name,
-            search_result.cards.len()
-        );
-
-        // Generate the actual images based on face mode - using the SAME logic as PDF generation
-        for copy_number in 0..decklist_entry.multiple {
-            let image_urls =
-                ProxyGenerator::get_image_urls_for_face_mode(&card, &decklist_entry.face_mode);
-
-            for (image_index, image_url) in image_urls.into_iter().enumerate() {
-                let page = card_position / 9; // 9 cards per page
-                let position_in_page = card_position % 9;
-
-                all_images.push(GridImage {
-                    entry_index,
-                    copy_number: copy_number as usize,
-                    _image_index: image_index,
-                    _card: card.clone(),
-                    image_url,
-                    page,
-                    position_in_page,
-                });
-
-                card_position += 1;
-
-                log::debug!(
-                    "Added grid image: entry={}, copy={}, image={}, url={}, page={}, pos={}",
-                    entry_index,
-                    copy_number,
-                    image_index,
-                    all_images.last().unwrap().image_url,
-                    page,
-                    position_in_page
-                );
+        'outer: for (idx, (card, quantity, face_mode)) in cards.iter().enumerate() {
+            for copy in 0..*quantity {
+                let urls = card.get_images_for_face_mode(face_mode);
+                for (img_idx, _) in urls.iter().enumerate() {
+                    if current_position == position {
+                        entry_index = idx;
+                        copy_number = copy as usize;
+                        image_index = img_idx;
+                        break 'outer;
+                    }
+                    current_position += 1;
+                }
             }
         }
+
+        grid_images.push(GridImage {
+            entry_index,
+            copy_number,
+            _image_index: image_index,
+            _card: cards[entry_index].0.clone(),
+            image_url,
+            page,
+            position_in_page,
+        });
     }
 
-    let total_pages = if all_images.is_empty() {
-        0
-    } else {
-        (all_images.len() + 8) / 9 // Ceiling division
-    };
-
-    // Second pass: Convert to the old format using cached search results (no duplicate API calls)
+    // Build preview entries for print selection, using the same resolved cards
     let mut preview_entries = Vec::new();
-    for (entry_index, decklist_entry) in entries.into_iter().enumerate() {
-        // Reuse search results from first pass instead of making another API call
-        let available_printings = if let Some(search_result) = search_results.get(entry_index) {
-            search_result.cards.clone()
-        } else {
-            Vec::new() // Fallback if something went wrong
-        };
-
-        let selected_printing = select_card_from_printings(&available_printings, &decklist_entry);
-
-        // Create grid positions for this entry by finding all images that belong to it
-        let grid_positions: Vec<GridPosition> = all_images
+    for (entry_idx, entry) in entries.iter().enumerate() {
+        // Find all grid positions for this entry
+        let positions: Vec<GridPosition> = grid_images
             .iter()
-            .filter(|img| img.entry_index == entry_index)
+            .filter(|img| img.entry_index == entry_idx)
             .map(|img| GridPosition {
                 page: img.page,
                 position_in_page: img.position_in_page,
@@ -596,29 +506,49 @@ async fn build_grid_preview_from_entries(
             })
             .collect();
 
+        // Get all available printings (search results)
+        let (available_printings, selected_printing_index) =
+            match ProxyGenerator::search_card(&entry.name).await {
+                Ok(search_result) => {
+                    // Find which card was selected by resolve_decklist_entries_to_cards()
+                    let selected_card = &cards.get(entry_idx).map(|(card, _, _)| card);
+                    let selected_index = if let Some(selected_card) = selected_card {
+                        // Find the index of the selected card in the search results
+                        search_result.cards.iter().position(|c| {
+                            c.name == selected_card.name
+                                && c.set == selected_card.set
+                                && c.language == selected_card.language
+                                && c.border_crop == selected_card.border_crop
+                        })
+                    } else {
+                        None
+                    };
+                    (search_result.cards, selected_index)
+                }
+                Err(_) => (Vec::new(), None), // Fallback to empty if search fails
+            };
+
         preview_entries.push(PreviewEntry {
-            decklist_entry,
+            decklist_entry: entry.clone(),
             available_printings,
-            selected_printing,
-            grid_positions,
+            selected_printing: selected_printing_index, // Use the same selection as PDF generation
+            grid_positions: positions,
         });
     }
 
-    let grid_preview = GridPreview {
+    let total_pages = if grid_images.is_empty() {
+        0
+    } else {
+        grid_images.iter().map(|img| img.page).max().unwrap_or(0) + 1
+    };
+
+    Ok(GridPreview {
         entries: preview_entries,
         current_page: 0,
         total_pages,
         selected_entry_index: None,
         print_selection_grid: None,
-    };
-
-    log::debug!(
-        "Built grid preview with {} total images across {} pages (exactly matching PDF)",
-        all_images.len(),
-        total_pages
-    );
-
-    Ok(grid_preview)
+    })
 }
 
 pub fn initialize() -> (AppState, Task<Message>) {
@@ -775,7 +705,7 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
 
             let cards = state.parsed_cards.clone();
             return Task::perform(
-                build_grid_preview_from_entries(cards),
+                build_grid_preview_from_entries_unified(cards),
                 Message::GridPreviewBuilt,
             );
         }
@@ -954,77 +884,13 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
             let double_face_mode = state.double_face_mode.clone();
             return Task::perform(
                 async move {
-                    // Build card list for PDF generation
-                    let mut card_list = Vec::new();
-
-                    for entry in cards {
-                        log::debug!("Searching for card: '{}'", entry.name);
-                        match ProxyGenerator::search_card(&entry.name).await {
-                            Ok(search_result) => {
-                                log::debug!(
-                                    "Found {} printings for '{}':",
-                                    search_result.cards.len(),
-                                    entry.name
-                                );
-                                for (i, card) in search_result.cards.iter().enumerate() {
-                                    log::debug!(
-                                        "  [{}] '{}' ({}) [{}]",
-                                        i,
-                                        card.name,
-                                        card.set.to_uppercase(),
-                                        card.language
-                                    );
-                                }
-                                // Use unified card selection logic (same as preview)
-                                if let Some(selected_index) =
-                                    select_card_from_printings(&search_result.cards, &entry)
-                                {
-                                    let card = search_result
-                                        .cards
-                                        .into_iter()
-                                        .nth(selected_index)
-                                        .unwrap();
-                                    log::debug!(
-                                        "Selected card: '{}' ({}) [{}]",
-                                        card.name,
-                                        card.set.to_uppercase(),
-                                        card.language
-                                    );
-                                    // Use the fully resolved face mode from parse_and_resolve_decklist
-                                    log::debug!(
-                                        "Entry details: '{}' [set: {:?}, lang: {:?}, face_mode: {:?}]",
-                                        entry.name,
-                                        entry.set,
-                                        entry.lang,
-                                        entry.face_mode
-                                    );
-
-                                    // No need for complex logic - the core library already resolved everything
-                                    let face_mode = entry.face_mode.clone();
-                                    log::debug!(
-                                        "Using resolved face mode for '{}': {:?}",
-                                        entry.name,
-                                        face_mode
-                                    );
-
-                                    card_list.push((card, entry.multiple as u32, face_mode));
-                                }
-                            }
-                            Err(e) => {
-                                log::debug!("Failed to search for card '{}': {:?}", entry.name, e);
-                                // Skip cards that can't be found
-                                continue;
-                            }
-                        }
-                    }
-
-                    // Generate PDF using the selected double face mode
+                    // Generate PDF using the new unified logic (same as grid preview)
                     let pdf_options = PdfOptions {
                         double_face_mode: double_face_mode,
                         ..PdfOptions::default()
                     };
-                    match ProxyGenerator::generate_pdf_from_cards_with_face_modes(
-                        &card_list,
+                    match ProxyGenerator::generate_pdf_from_entries(
+                        &cards,
                         pdf_options,
                         |_current, _total| {
                             // No progress reporting for now
@@ -1380,9 +1246,6 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                                 );
 
                                 // Find which copy and which image within that copy this position represents
-                                let images_per_copy = image_urls.len();
-                                let total_images_for_entry =
-                                    entry.decklist_entry.multiple as usize * images_per_copy;
 
                                 // Find the position of this grid slot relative to this entry's images
                                 let entry_positions: Vec<&GridPosition> = entry
@@ -1397,18 +1260,31 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                                     })
                                     .collect();
 
-                                if let Some(relative_pos) = entry_positions
+                                if let Some(grid_position) = entry_positions
                                     .iter()
-                                    .position(|pos| pos.position_in_page == position_idx)
+                                    .find(|pos| pos.position_in_page == position_idx)
                                 {
-                                    let image_url = if relative_pos < total_images_for_entry {
-                                        let image_index = relative_pos % images_per_copy;
-                                        image_urls
-                                            .get(image_index)
-                                            .unwrap_or(&selected_card.border_crop)
-                                    } else {
-                                        &selected_card.border_crop // Fallback
-                                    };
+                                    // Calculate which image this should be based on copy_number and position within that copy
+                                    
+                                    // Find which image within the copy this position represents
+                                    // by looking at all positions for this copy on all pages
+                                    let copy_positions: Vec<&GridPosition> = entry
+                                        .grid_positions
+                                        .iter()
+                                        .filter(|pos| pos.copy_number == grid_position.copy_number)
+                                        .collect();
+                                    
+                                    let image_index_within_copy = copy_positions
+                                        .iter()
+                                        .position(|pos| 
+                                            pos.page == grid_position.page && 
+                                            pos.position_in_page == grid_position.position_in_page
+                                        )
+                                        .unwrap_or(0);
+                                    
+                                    let image_url = image_urls
+                                        .get(image_index_within_copy)
+                                        .unwrap_or(&selected_card.border_crop);
 
                                     if let Some(image_bytes) = get_cached_image_bytes(image_url) {
                                         // Display the correct image based on face mode and position
