@@ -52,10 +52,10 @@ pub use decklist::{DecklistEntry, ParsedDecklistLine, parse_decklist, parse_line
 pub use error::ProxyError;
 pub use globals::{
     find_card_name, force_update_card_lookup, force_update_set_codes, get_cached_image_bytes,
-    get_card_lookup, get_card_name_cache_info, get_card_name_cache_info_ref, get_image_cache,
-    get_image_cache_info, get_or_fetch_image, get_or_fetch_image_bytes,
-    get_or_fetch_search_results, get_scryfall_client, get_set_codes_cache, initialize_caches,
-    shutdown_caches,
+    get_card_lookup, get_card_name_cache_info, get_card_name_cache_info_ref,
+    get_card_names_cache_size, get_image_cache, get_image_cache_info, get_or_fetch_image,
+    get_or_fetch_image_bytes, get_or_fetch_search_results, get_scryfall_client,
+    get_search_results_cache_info, get_set_codes_cache, initialize_caches, shutdown_caches,
 };
 pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};
 pub use pdf::{PageSize, PdfOptions, generate_pdf};

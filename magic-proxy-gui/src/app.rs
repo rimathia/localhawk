@@ -6,7 +6,8 @@ use iced::{Element, Length, Task};
 use magic_proxy_core::{
     BackgroundLoadHandle, BackgroundLoadProgress, Card, DecklistEntry, DoubleFaceMode,
     LoadingPhase, PdfOptions, ProxyGenerator, force_update_card_lookup, get_cached_image_bytes,
-    get_card_name_cache_info, get_image_cache_info, start_background_image_loading,
+    get_card_name_cache_info, get_card_names_cache_size, get_image_cache_info,
+    get_search_results_cache_info, start_background_image_loading,
 };
 use rfd::AsyncFileDialog;
 
@@ -1493,14 +1494,20 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                             text(
                                 get_card_name_cache_info()
                                     .map(|(timestamp, count)| {
+                                        let size_text = get_card_names_cache_size()
+                                            .map(|(_, size_mb)| {
+                                                format!("\n• {:.1} MB estimated size", size_mb)
+                                            })
+                                            .unwrap_or_default();
                                         format!(
-                                            "• {} card names cached\n• Last updated: {}",
+                                            "• {} card names cached\n• Last updated: {}{}",
                                             count,
                                             timestamp
                                                 .format(
                                                     &time::format_description::well_known::Rfc3339
                                                 )
-                                                .unwrap_or_else(|_| "Unknown".to_string())
+                                                .unwrap_or_else(|_| "Unknown".to_string()),
+                                            size_text
                                         )
                                     })
                                     .unwrap_or_else(|| "• No card name cache found".to_string())
@@ -1513,6 +1520,31 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                         background: Some(iced::Color::from_rgb(0.96, 0.98, 0.96).into()),
                         border: iced::Border {
                             color: iced::Color::from_rgb(0.85, 0.9, 0.85),
+                            width: 1.0,
+                            radius: 3.0.into(),
+                        },
+                        ..Default::default()
+                    })
+                    .padding(12),
+                    // Search Results Cache Section
+                    container(
+                        column![
+                            text("Search Results Cache").size(16),
+                            text({
+                                let (count, size_mb) = get_search_results_cache_info();
+                                format!(
+                                    "• {} cached searches\n• {:.1} MB estimated size",
+                                    count, size_mb
+                                )
+                            })
+                            .size(12),
+                        ]
+                        .spacing(8)
+                    )
+                    .style(|_theme| container::Style {
+                        background: Some(iced::Color::from_rgb(0.94, 0.98, 0.96).into()),
+                        border: iced::Border {
+                            color: iced::Color::from_rgb(0.8, 0.9, 0.85),
                             width: 1.0,
                             radius: 3.0.into(),
                         },

@@ -6,6 +6,14 @@ use std::collections::HashSet;
 use std::sync::{Arc, OnceLock, RwLock};
 use tracing::{debug, info};
 
+// Memory size estimation constants for cache statistics
+// Search Results Cache: avg 30 cards × (5 strings × 50 bytes + overhead) ≈ 10KB per card + JSON overhead
+const SEARCH_RESULT_SIZE_ESTIMATE: u64 = 50 * 1024; // 50 KB per cached search
+
+// Card Names Cache: per-name estimate (avg 20 bytes) + fuzzy index overhead factor (4x for trie structure)
+const CARD_NAME_SIZE_ESTIMATE: u64 = 20; // 20 bytes per card name
+const FUZZY_INDEX_OVERHEAD_FACTOR: u64 = 4; // Fuzzy index adds 4x overhead for trie structure
+
 // Global singletons - initialized once, shared everywhere
 static SCRYFALL_CLIENT: OnceLock<ScryfallClient> = OnceLock::new();
 static IMAGE_CACHE: OnceLock<Arc<RwLock<ImageCache>>> = OnceLock::new();
@@ -285,6 +293,15 @@ pub fn get_card_name_cache_info() -> Option<(time::OffsetDateTime, usize)> {
     cache_info_guard.clone()
 }
 
+/// Get card names cache statistics (count and estimated size in MB)
+pub fn get_card_names_cache_size() -> Option<(usize, f64)> {
+    let cache_info = get_card_name_cache_info()?;
+    let count = cache_info.1; // Number of card names
+    let estimated_bytes = (count as u64) * CARD_NAME_SIZE_ESTIMATE * FUZZY_INDEX_OVERHEAD_FACTOR;
+    let size_mb = estimated_bytes as f64 / (1024.0 * 1024.0);
+    Some((count, size_mb))
+}
+
 /// Get image cache statistics (count and size in MB)
 pub fn get_image_cache_info() -> (usize, f64) {
     let cache = get_image_cache();
@@ -299,6 +316,15 @@ pub fn get_cached_image_bytes(url: &str) -> Option<Vec<u8>> {
     let cache = get_image_cache();
     let mut cache_guard = cache.write().unwrap();
     cache_guard.get(url)
+}
+
+/// Get search results cache statistics (count and estimated size in MB)
+pub fn get_search_results_cache_info() -> (usize, f64) {
+    let cache = get_search_results_cache();
+    let cache_guard = cache.read().unwrap();
+    let count = cache_guard.cache.len();
+    let size_mb = (count as u64 * SEARCH_RESULT_SIZE_ESTIMATE) as f64 / (1024.0 * 1024.0);
+    (count, size_mb)
 }
 
 pub async fn get_or_fetch_search_results(
