@@ -127,6 +127,7 @@ let meld_card = meld_search_result.cards
   - Search endpoint: `https://api.scryfall.com/cards/search?q=name=!{CARD_NAME}&unique=prints`
   - Card names catalog: `https://api.scryfall.com/catalog/card-names`
   - Image field: `border_crop` from `image_uris` or `card_faces[].image_uris`
+  - **Known limitation**: Some special event cards (e.g., "Bad Knight" from Unknown Event set) appear in the card names catalog but return 404 when searched via the API
 
 ## Implementation Patterns from MagicHawk
 
