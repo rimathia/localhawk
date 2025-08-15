@@ -3,8 +3,11 @@ pub mod cache;
 pub mod card_name_cache;
 pub mod decklist;
 pub mod error;
+pub mod format;
 pub mod globals;
+pub mod layout;
 pub mod lookup;
+pub mod pagination;
 pub mod pdf;
 pub mod scryfall;
 pub mod search_results_cache;
@@ -50,6 +53,7 @@ impl DoubleFaceMode {
 }
 pub use decklist::{DecklistEntry, ParsedDecklistLine, parse_decklist, parse_line};
 pub use error::ProxyError;
+pub use format::{build_aligned_parsed_output, format_decklist_entry, format_entries_summary};
 pub use globals::{
     find_card_name, force_update_card_lookup, force_update_set_codes, get_cached_image_bytes,
     get_card_lookup, get_card_name_cache_info, get_card_name_cache_info_ref,
@@ -57,7 +61,9 @@ pub use globals::{
     get_or_fetch_image_bytes, get_or_fetch_search_results, get_scryfall_client,
     get_search_results_cache_info, get_set_codes_cache, initialize_caches, shutdown_caches,
 };
+pub use layout::{GridImage, GridPosition, GridPreview, PageNavigation, PreviewEntry};
 pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};
+pub use pagination::{PaginatedGrid, PaginatedView};
 pub use pdf::{PageSize, PdfOptions, generate_pdf};
 pub use scryfall::{
     Card, CardSearchResult, ScryfallCardNames, ScryfallClient,

@@ -4,10 +4,28 @@ use iced::widget::{
 use iced::widget::{horizontal_space, rule};
 use iced::{Element, Length, Task};
 use magic_proxy_core::{
-    BackgroundLoadHandle, BackgroundLoadProgress, Card, DecklistEntry, DoubleFaceMode,
-    LoadingPhase, PdfOptions, ProxyGenerator, force_update_card_lookup, get_cached_image_bytes,
-    get_card_name_cache_info, get_card_names_cache_size, get_image_cache_info,
-    get_search_results_cache_info, start_background_image_loading,
+    BackgroundLoadHandle,
+    BackgroundLoadProgress,
+    DecklistEntry,
+    DoubleFaceMode,
+    GridImage,
+    GridPosition,
+    GridPreview,
+    LoadingPhase,
+    PageNavigation,
+    PaginatedGrid,
+    PdfOptions,
+    PreviewEntry,
+    ProxyGenerator,
+    // Import the new modules
+    build_aligned_parsed_output,
+    force_update_card_lookup,
+    get_cached_image_bytes,
+    get_card_name_cache_info,
+    get_card_names_cache_size,
+    get_image_cache_info,
+    get_search_results_cache_info,
+    start_background_image_loading,
 };
 use rfd::AsyncFileDialog;
 
@@ -28,235 +46,41 @@ const UI_FONT_SIZE: u16 = 14;
 // Advanced options sidebar width
 const ADVANCED_SIDEBAR_WIDTH: f32 = 480.0;
 
-/// Reusable paginated card grid component
-#[derive(Debug, Clone)]
-pub struct PaginatedCardGrid {
-    pub current_page: usize,
-    pub total_items: usize,
-    pub items_per_page: usize,
-    pub _grid_columns: usize, // Keep for potential future use
-    pub _grid_rows: usize,    // Keep for potential future use
-}
-
-impl PaginatedCardGrid {
-    pub fn new(
-        total_items: usize,
-        items_per_page: usize,
-        grid_columns: usize,
-        grid_rows: usize,
-    ) -> Self {
-        let _total_pages = if total_items == 0 {
-            1
-        } else {
-            (total_items + items_per_page - 1) / items_per_page // Ceiling division
-        };
-
-        Self {
-            current_page: 0,
-            total_items,
-            items_per_page,
-            _grid_columns: grid_columns,
-            _grid_rows: grid_rows,
-        }
+/// Create navigation controls for a paginated grid (GUI helper)
+fn create_navigation_controls_for_grid(
+    grid: &PaginatedGrid,
+    prev_message: Message,
+    next_message: Message,
+) -> Element<'_, Message> {
+    if grid.total_pages() <= 1 {
+        // No navigation needed for single page
+        return row![].into();
     }
 
-    pub fn total_pages(&self) -> usize {
-        if self.total_items == 0 {
-            1
-        } else {
-            (self.total_items + self.items_per_page - 1) / self.items_per_page
-        }
-    }
-
-    pub fn can_go_prev(&self) -> bool {
-        self.current_page > 0
-    }
-
-    pub fn can_go_next(&self) -> bool {
-        self.current_page < self.total_pages() - 1
-    }
-
-    pub fn prev_page(&mut self) {
-        if self.can_go_prev() {
-            self.current_page -= 1;
-        }
-    }
-
-    pub fn next_page(&mut self) {
-        if self.can_go_next() {
-            self.current_page += 1;
-        }
-    }
-
-    pub fn get_current_page_items(&self) -> (usize, usize) {
-        let start = self.current_page * self.items_per_page;
-        let end = (start + self.items_per_page).min(self.total_items);
-        (start, end)
-    }
-
-    /// Create navigation controls for the paginated grid
-    pub fn create_navigation_controls<'a>(
-        &self,
-        prev_message: Message,
-        next_message: Message,
-    ) -> Element<'a, Message> {
-        if self.total_pages() <= 1 {
-            // No navigation needed for single page
-            return row![].into();
-        }
-
-        row![
-            button("Previous")
-                .on_press_maybe(if self.can_go_prev() {
-                    Some(prev_message)
-                } else {
-                    None
-                })
-                .padding(5),
-            text(format!(
-                "Page {} of {}",
-                self.current_page + 1,
-                self.total_pages()
-            ))
-            .size(14),
-            button("Next")
-                .on_press_maybe(if self.can_go_next() {
-                    Some(next_message)
-                } else {
-                    None
-                })
-                .padding(5),
-        ]
-        .spacing(10)
-        .into()
-    }
-}
-
-/// Individual card position in the grid layout
-#[derive(Debug, Clone, PartialEq)]
-pub struct GridPosition {
-    pub page: usize,             // Which page this position is on
-    pub position_in_page: usize, // 0-8 position within 3x3 grid
-    pub entry_index: usize,      // Back-reference to parent entry
-    pub copy_number: usize,      // 1st, 2nd, 3rd, 4th copy of entry
-}
-
-/// Represents one decklist entry with all its printings and positions
-#[derive(Debug, Clone)]
-pub struct PreviewEntry {
-    pub decklist_entry: DecklistEntry, // Original "4x Lightning Bolt [LEA]"
-    pub available_printings: Vec<Card>, // All printings found from search
-    pub selected_printing: Option<usize>, // Index into available_printings
-    pub grid_positions: Vec<GridPosition>, // Where this entry's cards appear
-}
-
-impl PreviewEntry {
-    /// Get the currently selected card or the first available printing
-    pub fn get_selected_card(&self) -> Option<&Card> {
-        match self.selected_printing {
-            Some(index) => self.available_printings.get(index),
-            None => self.available_printings.first(),
-        }
-    }
-
-    /// Set the selected printing by index
-    pub fn set_selected_printing(&mut self, print_index: usize) {
-        if print_index < self.available_printings.len() {
-            self.selected_printing = Some(print_index);
-        }
-    }
-}
-
-/// Multi-page grid preview state
-#[derive(Debug, Clone)]
-pub struct GridPreview {
-    pub entries: Vec<PreviewEntry>,          // One per decklist entry
-    pub current_page: usize,                 // 0-indexed current page
-    pub total_pages: usize,                  // Calculated from card count
-    pub selected_entry_index: Option<usize>, // For print selection modal
-    pub print_selection_grid: Option<PaginatedCardGrid>, // Pagination for print selection modal
-}
-
-impl GridPreview {
-    /// Calculate total number of pages needed for all cards
-    pub fn _calculate_total_pages(&self) -> usize {
-        let total_cards: usize = self
-            .entries
-            .iter()
-            .map(|entry| {
-                if let Some(selected_card) = entry.get_selected_card() {
-                    _calculate_actual_card_count(&entry.decklist_entry, selected_card)
-                } else {
-                    entry.decklist_entry.multiple as usize // Fallback if no card found
-                }
+    row![
+        button("Previous")
+            .on_press_maybe(if grid.can_go_prev() {
+                Some(prev_message)
+            } else {
+                None
             })
-            .sum();
-        if total_cards == 0 {
-            0
-        } else {
-            (total_cards + 8) / 9 // Ceiling division for 9 cards per page
-        }
-    }
-
-    /// Get all grid positions for the current page
-    pub fn get_current_page_positions(&self) -> Vec<(usize, &GridPosition, &PreviewEntry)> {
-        let mut positions = Vec::new();
-        for (entry_idx, entry) in self.entries.iter().enumerate() {
-            for position in &entry.grid_positions {
-                if position.page == self.current_page {
-                    positions.push((entry_idx, position, entry));
-                }
-            }
-        }
-        positions.sort_by_key(|(_, pos, _)| pos.position_in_page);
-        positions
-    }
-
-    /// Navigate to next page if possible
-    pub fn next_page(&mut self) -> bool {
-        if self.current_page + 1 < self.total_pages {
-            self.current_page += 1;
-            true
-        } else {
-            false
-        }
-    }
-
-    /// Navigate to previous page if possible
-    pub fn prev_page(&mut self) -> bool {
-        if self.current_page > 0 {
-            self.current_page -= 1;
-            true
-        } else {
-            false
-        }
-    }
-}
-
-/// Page navigation state
-#[derive(Debug, Clone)]
-pub struct PageNavigation {
-    pub current_page: usize, // Current page being viewed
-    pub total_pages: usize,  // Total pages calculated from cards
-    pub can_go_prev: bool,   // Navigation state
-    pub can_go_next: bool,
-}
-
-impl PageNavigation {
-    pub fn new(total_pages: usize) -> Self {
-        Self {
-            current_page: 0,
-            total_pages,
-            can_go_prev: false,
-            can_go_next: total_pages > 1,
-        }
-    }
-
-    pub fn update_navigation_state(&mut self, current_page: usize) {
-        self.current_page = current_page;
-        self.can_go_prev = current_page > 0;
-        self.can_go_next = current_page + 1 < self.total_pages;
-    }
+            .padding(5),
+        text(format!(
+            "Page {} of {}",
+            grid.current_page + 1,
+            grid.total_pages()
+        ))
+        .size(14),
+        button("Next")
+            .on_press_maybe(if grid.can_go_next() {
+                Some(next_message)
+            } else {
+                None
+            })
+            .padding(5),
+    ]
+    .spacing(10)
+    .into()
 }
 
 /// Preview mode state
@@ -366,80 +190,6 @@ impl AppState {
     }
 }
 
-/// Calculate the actual number of images that will be generated for a decklist entry
-/// considering its face mode and whether the card has a back face
-fn _calculate_actual_card_count(entry: &DecklistEntry, card: &Card) -> usize {
-    let base_count = entry.multiple as usize;
-
-    match entry.face_mode {
-        DoubleFaceMode::FrontOnly => {
-            // Always 1 image per copy (front only)
-            base_count
-        }
-        DoubleFaceMode::BackOnly => {
-            // 1 image per copy (back if it exists, otherwise front)
-            base_count
-        }
-        DoubleFaceMode::BothSides => {
-            // 1 or 2 images per copy depending on whether card has back
-            if card.has_back_side() {
-                base_count * 2 // Front + back
-            } else {
-                base_count // Front only
-            }
-        }
-    }
-}
-
-/// Build aligned text output: start with original decklist, replace successfully parsed lines
-/// Uses current parsed_cards state (which may have updated printings)
-fn build_aligned_parsed_output(input_text: &str, parsed_cards: &[DecklistEntry]) -> String {
-    let input_lines: Vec<&str> = input_text.lines().collect();
-    let mut output_lines: Vec<String> = input_lines.iter().map(|line| line.to_string()).collect();
-
-    // Replace lines where we successfully parsed something
-    for entry in parsed_cards {
-        if let Some(line_num) = entry.source_line_number {
-            if line_num < output_lines.len() {
-                let set_info = if let Some(set) = &entry.set {
-                    format!(" • Set: {}", set.to_uppercase())
-                } else {
-                    String::new()
-                };
-                let lang_info = if let Some(lang) = &entry.lang {
-                    format!(" • Lang: {}", lang.to_uppercase())
-                } else {
-                    String::new()
-                };
-                let face_info = match entry.face_mode {
-                    DoubleFaceMode::FrontOnly => " • Face: Front only".to_string(),
-                    DoubleFaceMode::BackOnly => " • Face: Back only".to_string(),
-                    DoubleFaceMode::BothSides => " • Face: Both sides".to_string(),
-                };
-
-                output_lines[line_num] = format!(
-                    "✓ {}x {}{}{}{}",
-                    entry.multiple, entry.name, set_info, lang_info, face_info
-                );
-            }
-        }
-    }
-
-    output_lines.join("\n")
-}
-
-/// Individual image that will appear in the grid (exactly matching PDF generation)
-#[derive(Debug, Clone)]
-pub struct GridImage {
-    pub entry_index: usize,      // Which decklist entry this came from
-    pub copy_number: usize,      // Which copy of that entry (0-based)
-    pub _image_index: usize, // Which image within that copy (for double-faced cards) - keep for future use
-    pub _card: Card,         // The actual card - keep for future use
-    pub _image_url: String,  // The URL of the image to display - kept for future use
-    pub page: usize,         // Which page this appears on
-    pub position_in_page: usize, // Position within the 3x3 grid (0-8)
-}
-
 /// Build grid preview using the exact same logic as PDF generation
 /// Build grid preview using the exact same logic as PDF generation
 /// This ensures 100% consistency between what you see and what you get
@@ -456,7 +206,7 @@ async fn build_grid_preview_from_entries_unified(
 
     // Convert to grid format with page/position information
     let mut grid_images = Vec::new();
-    for (position, image_url) in image_urls.into_iter().enumerate() {
+    for (position, _image_url) in image_urls.into_iter().enumerate() {
         let page = position / 9; // 9 cards per page
         let position_in_page = position % 9;
 
@@ -464,7 +214,7 @@ async fn build_grid_preview_from_entries_unified(
         let mut current_position = 0;
         let mut entry_index = 0;
         let mut copy_number = 0;
-        let mut image_index = 0;
+        let mut _image_index = 0;
 
         'outer: for (idx, (card, quantity, face_mode)) in cards.iter().enumerate() {
             for copy in 0..*quantity {
@@ -473,7 +223,7 @@ async fn build_grid_preview_from_entries_unified(
                     if current_position == position {
                         entry_index = idx;
                         copy_number = copy as usize;
-                        image_index = img_idx;
+                        _image_index = img_idx;
                         break 'outer;
                     }
                     current_position += 1;
@@ -484,9 +234,6 @@ async fn build_grid_preview_from_entries_unified(
         grid_images.push(GridImage {
             entry_index,
             copy_number,
-            _image_index: image_index,
-            _card: cards[entry_index].0.clone(),
-            _image_url: image_url,
             page,
             position_in_page,
         });
@@ -753,12 +500,8 @@ pub fn update(state: &mut AppState, message: Message) -> Task<Message> {
                     // Initialize pagination grid for print selection
                     let entry = &grid_preview.entries[entry_index];
                     let total_printings = entry.available_printings.len();
-                    grid_preview.print_selection_grid = Some(PaginatedCardGrid::new(
-                        total_printings,
-                        PRINTS_PER_PAGE,
-                        PRINT_SELECTION_COLUMNS,
-                        PRINT_SELECTION_ROWS,
-                    ));
+                    grid_preview.print_selection_grid =
+                        Some(PaginatedGrid::new(total_printings, PRINTS_PER_PAGE));
 
                     state.preview_mode = PreviewMode::PrintSelection;
                 }
@@ -1162,7 +905,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                     if let Some(ref page_navigation) = state.page_navigation {
                         row![
                             button("Previous")
-                                .on_press_maybe(if page_navigation.can_go_prev {
+                                .on_press_maybe(if page_navigation.can_go_prev() {
                                     Some(Message::PrevPage)
                                 } else {
                                     None
@@ -1175,7 +918,7 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
                             ))
                             .size(14),
                             button("Next")
-                                .on_press_maybe(if page_navigation.can_go_next {
+                                .on_press_maybe(if page_navigation.can_go_next() {
                                     Some(Message::NextPage)
                                 } else {
                                     None
@@ -1357,10 +1100,11 @@ pub fn view(state: &AppState) -> Element<'_, Message> {
 
                             // Get pagination info from the grid
                             let print_grid = grid_preview.print_selection_grid.as_ref().unwrap();
-                            let (start_idx, end_idx) = print_grid.get_current_page_items();
+                            let (start_idx, end_idx) = print_grid.get_current_page_range();
 
                             // Create pagination controls
-                            let page_nav = print_grid.create_navigation_controls(
+                            let page_nav = create_navigation_controls_for_grid(
+                                print_grid,
                                 Message::PrintSelectionPrevPage,
                                 Message::PrintSelectionNextPage,
                             );

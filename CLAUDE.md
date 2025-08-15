@@ -82,6 +82,18 @@ let meld_card = meld_search_result.cards
 - `cargo update` - Update dependencies in Cargo.lock
 - **ALWAYS run `cargo fmt` as the final step after making any code changes** - This ensures consistent code formatting across the entire codebase
 
+## Code Style Guidelines
+
+### Naming Conventions
+- **Underscore prefix (_) for unused entities only** - Names starting with underscore should only be used for variables, functions, fields, or other entities that are intentionally unused
+- **Remove unused code** - If code is no longer needed, remove it entirely rather than prefixing with underscore
+- **Temporary underscore prefix** - Only use underscore prefix as a temporary measure during development when you know code will be used later
+- Examples:
+  - ✅ `_response` for an unused function parameter
+  - ✅ `_future_field` for a struct field reserved for future use  
+  - ❌ `_calculate_total_pages` for a method that was used but is now dead code (remove instead)
+  - ❌ `_helper_function` for a function that is actively called (rename to `helper_function`)
+
 ### Git Workflow (IMPORTANT)
 
 #### Commit Guidelines
