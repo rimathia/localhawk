@@ -87,11 +87,11 @@ class ProxyGenerator {
             return .failure(.pdfGenerationFailed)
         }
         
+        // Ensure buffer is freed regardless of how this scope exits
+        defer { proxy_free_buffer(buffer) }
+        
         // Create Data object from the buffer
         let data = Data(bytes: buffer, count: size)
-        
-        // Free the buffer (important!)
-        proxy_free_buffer(buffer)
         
         return .success(data)
     }
@@ -122,6 +122,7 @@ class ProxyGenerator {
         guard let messagePtr = messagePtr else {
             return "Unknown error"
         }
+        // Note: proxy_get_error_message returns static strings - no need to free
         return String(cString: messagePtr)
     }
 }
