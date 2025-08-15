@@ -24,6 +24,10 @@ typedef enum {
  * Must be called before any other FFI functions.
  * 
  * @return PROXY_SUCCESS on success, negative error code on failure
+ * 
+ * Memory Management:
+ * - No memory is allocated by this function
+ * - No cleanup required
  */
 int32_t proxy_initialize(void);
 
@@ -50,6 +54,11 @@ int32_t proxy_generate_pdf_from_decklist(
  * Free buffer allocated by proxy_generate_pdf_from_decklist.
  * 
  * @param buffer Buffer pointer returned by proxy_generate_pdf_from_decklist
+ * 
+ * Memory Management:
+ * - This function must be called to free buffers from proxy_generate_pdf_from_decklist
+ * - Safe to call with NULL pointer (no-op)
+ * - Do not call with pointers not returned by proxy_generate_pdf_from_decklist
  */
 void proxy_free_buffer(uint8_t* buffer);
 
@@ -58,6 +67,11 @@ void proxy_free_buffer(uint8_t* buffer);
  * 
  * @param error_code Error code returned by other functions
  * @return Static string describing the error (do not free)
+ * 
+ * Memory Management:
+ * - Returns pointer to static string - DO NOT FREE
+ * - Returned pointer remains valid for the lifetime of the program
+ * - Thread-safe (returns immutable static data)
  */
 const char* proxy_get_error_message(int32_t error_code);
 
@@ -65,6 +79,10 @@ const char* proxy_get_error_message(int32_t error_code);
  * Simple test function to verify FFI is working.
  * 
  * @return Always returns 42
+ * 
+ * Memory Management:
+ * - No memory is allocated by this function
+ * - No cleanup required
  */
 int32_t proxy_test_connection(void);
 
