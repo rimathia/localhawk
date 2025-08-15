@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 use std::os::raw::{c_char, c_int};
 
-use crate::{DoubleFaceMode, ProxyGenerator, PdfOptions, initialize_caches};
+use crate::{DoubleFaceMode, PdfOptions, ProxyGenerator, initialize_caches};
 
 /// Error codes for FFI functions
 #[repr(C)]
@@ -24,7 +24,7 @@ pub extern "C" fn proxy_initialize() -> c_int {
         Ok(rt) => rt,
         Err(_) => return FFIError::InitializationFailed as c_int,
     };
-    
+
     match rt.block_on(initialize_caches()) {
         Ok(_) => FFIError::Success as c_int,
         Err(_) => FFIError::InitializationFailed as c_int,
@@ -32,15 +32,15 @@ pub extern "C" fn proxy_initialize() -> c_int {
 }
 
 /// Generate PDF from decklist text
-/// 
+///
 /// # Arguments
 /// * `decklist_cstr` - Null-terminated C string containing the decklist
 /// * `output_buffer` - Pointer to buffer pointer (will be allocated by this function)
 /// * `output_size` - Pointer to size_t that will receive the buffer size
-/// 
+///
 /// # Returns
 /// * 0 on success, negative error code on failure
-/// 
+///
 /// # Memory Management
 /// * The output buffer is allocated by this function using malloc
 /// * Caller must call `proxy_free_buffer` to free the memory
@@ -78,10 +78,13 @@ pub extern "C" fn proxy_generate_pdf_from_decklist(
         let entries = ProxyGenerator::parse_and_resolve_decklist(
             decklist_text,
             DoubleFaceMode::BothSides, // Default for mobile - show both faces
-        ).await?;
+        )
+        .await?;
 
         if entries.is_empty() {
-            return Err(crate::ProxyError::InvalidCard("No valid cards found in decklist".to_string()));
+            return Err(crate::ProxyError::InvalidCard(
+                "No valid cards found in decklist".to_string(),
+            ));
         }
 
         // Generate PDF with default options
@@ -89,7 +92,8 @@ pub extern "C" fn proxy_generate_pdf_from_decklist(
         ProxyGenerator::generate_pdf_from_entries(&entries, pdf_options, |current, total| {
             // Simple progress callback - could be enhanced later
             log::debug!("PDF generation progress: {}/{}", current, total);
-        }).await
+        })
+        .await
     }) {
         Ok(data) => data,
         Err(e) => {
@@ -108,7 +112,7 @@ pub extern "C" fn proxy_generate_pdf_from_decklist(
         if ptr.is_null() {
             return FFIError::OutOfMemory as c_int;
         }
-        
+
         // Copy PDF data to allocated buffer
         std::ptr::copy_nonoverlapping(pdf_data.as_ptr(), ptr, buffer_size);
         ptr
@@ -142,12 +146,14 @@ pub extern "C" fn proxy_get_error_message(error_code: c_int) -> *const c_char {
         x if x == FFIError::NullPointer as c_int => "Null pointer argument",
         x if x == FFIError::InvalidInput as c_int => "Invalid input string",
         x if x == FFIError::InitializationFailed as c_int => "Failed to initialize caches",
-        x if x == FFIError::ParseFailed as c_int => "Failed to parse decklist or no valid cards found",
+        x if x == FFIError::ParseFailed as c_int => {
+            "Failed to parse decklist or no valid cards found"
+        }
         x if x == FFIError::PdfGenerationFailed as c_int => "Failed to generate PDF",
         x if x == FFIError::OutOfMemory as c_int => "Out of memory",
         _ => "Unknown error",
     };
-    
+
     // Return pointer to static string (no need to free)
     message.as_ptr() as *const c_char
 }
@@ -169,10 +175,10 @@ mod tests {
         // Test initialization
         let init_result = proxy_initialize();
         // Note: This will likely fail in tests without proper setup, but shouldn't crash
-        
+
         // Test connection
         assert_eq!(proxy_test_connection(), 42);
-        
+
         // Test error message function
         let msg_ptr = proxy_get_error_message(FFIError::InvalidInput as c_int);
         assert!(!msg_ptr.is_null());
@@ -182,22 +188,15 @@ mod tests {
     fn test_null_pointer_handling() {
         let mut buffer: *mut u8 = ptr::null_mut();
         let mut size: usize = 0;
-        
+
         // Test with null decklist
-        let result = proxy_generate_pdf_from_decklist(
-            ptr::null(),
-            &mut buffer,
-            &mut size,
-        );
+        let result = proxy_generate_pdf_from_decklist(ptr::null(), &mut buffer, &mut size);
         assert_eq!(result, FFIError::NullPointer as c_int);
-        
+
         // Test with null output buffer pointer
         let test_str = CString::new("1 Lightning Bolt").unwrap();
-        let result = proxy_generate_pdf_from_decklist(
-            test_str.as_ptr(),
-            ptr::null_mut(),
-            &mut size,
-        );
+        let result =
+            proxy_generate_pdf_from_decklist(test_str.as_ptr(), ptr::null_mut(), &mut size);
         assert_eq!(result, FFIError::NullPointer as c_int);
     }
 
@@ -205,23 +204,15 @@ mod tests {
     fn test_empty_input_handling() {
         let mut buffer: *mut u8 = ptr::null_mut();
         let mut size: usize = 0;
-        
+
         // Test with empty string
         let test_str = CString::new("").unwrap();
-        let result = proxy_generate_pdf_from_decklist(
-            test_str.as_ptr(),
-            &mut buffer,
-            &mut size,
-        );
+        let result = proxy_generate_pdf_from_decklist(test_str.as_ptr(), &mut buffer, &mut size);
         assert_eq!(result, FFIError::InvalidInput as c_int);
-        
+
         // Test with whitespace-only string
         let test_str = CString::new("   \n  \t  ").unwrap();
-        let result = proxy_generate_pdf_from_decklist(
-            test_str.as_ptr(),
-            &mut buffer,
-            &mut size,
-        );
+        let result = proxy_generate_pdf_from_decklist(test_str.as_ptr(), &mut buffer, &mut size);
         assert_eq!(result, FFIError::InvalidInput as c_int);
     }
 }

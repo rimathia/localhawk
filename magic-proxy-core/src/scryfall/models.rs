@@ -262,7 +262,7 @@ impl Card {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CardSearchResult {
     pub cards: Vec<Card>,
     pub total_found: usize,
