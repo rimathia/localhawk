@@ -1,8 +1,8 @@
-// Modern cache framework modules
+// LRU cache framework modules
 pub mod file_storage;
 pub mod lru_cache;
-pub mod modern_image_cache;
-pub mod modern_search_cache;
+pub mod lru_image_cache;
+pub mod lru_search_cache;
 pub mod search_json_storage;
 pub mod vector_storage;
 
@@ -13,16 +13,16 @@ pub mod lru_tests;
 // Re-export the main types for convenience
 pub use file_storage::FileStorage;
 pub use lru_cache::{CacheConfig, CacheEntry, CacheStats, LruCache, StorageStrategy};
-pub use modern_image_cache::{
-    ModernImageCache, create_image_cache, create_image_cache_with_config,
+pub use lru_image_cache::{
+    LruImageCache, create_image_cache, create_image_cache_with_config,
 };
-pub use modern_search_cache::{
-    ModernSearchCache, create_search_cache, create_search_cache_with_config,
+pub use lru_search_cache::{
+    LruSearchCache, create_search_cache, create_search_cache_with_config,
 };
 pub use search_json_storage::SearchJsonStorage;
 pub use vector_storage::VectorStorage;
 
-// Legacy image cache implementation (will be migrated to new framework)
+// Original image cache implementation (coexists with LRU implementation)
 use crate::error::ProxyError;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -33,7 +33,7 @@ use time::OffsetDateTime;
 use tracing::{debug, info, warn};
 
 #[derive(Debug)]
-struct LegacyImageCacheEntry {
+struct OriginalImageCacheEntry {
     raw_bytes: Vec<u8>,
     created_at: OffsetDateTime,
     last_accessed: OffsetDateTime,
@@ -56,7 +56,7 @@ struct DiskCacheEntry {
 
 #[derive(Debug)]
 pub struct ImageCache {
-    cache: HashMap<String, LegacyImageCacheEntry>,
+    cache: HashMap<String, OriginalImageCacheEntry>,
     cache_dir: PathBuf,
     metadata_file: PathBuf,
     max_size_bytes: u64,
@@ -130,7 +130,7 @@ impl ImageCache {
         // Insert into memory cache
         self.cache.insert(
             url.clone(),
-            LegacyImageCacheEntry {
+            OriginalImageCacheEntry {
                 raw_bytes,
                 created_at: now,
                 last_accessed: now,
@@ -268,7 +268,7 @@ impl ImageCache {
                 Ok(raw_bytes) => {
                     self.cache.insert(
                         url,
-                        LegacyImageCacheEntry {
+                        OriginalImageCacheEntry {
                             raw_bytes,
                             created_at: disk_entry.created_at,
                             last_accessed: disk_entry.last_accessed,
