@@ -1,2 +1,17 @@
 /target
 debug.log
+
+# iOS build artifacts
+/ios-libs/
+MagicProxyiOS/build/
+
+# Xcode user data
+**/*.xcuserstate
+**/xcuserdata/
+
+# macOS system files
+.DS_Store
+
+# Temporary test files
+test_ffi.c
+test_ffi_build.sh

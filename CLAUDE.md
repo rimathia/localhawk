@@ -4,14 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Magic Card Proxy Sheet Generator - A Rust GUI application that creates PDF proxy sheets for Magic: The Gathering cards. Users specify a list of cards and the application generates a printable PDF with card images arranged in a grid layout.
+Magic Card Proxy Sheet Generator - A cross-platform application that creates PDF proxy sheets for Magic: The Gathering cards. Available as both a desktop GUI (Rust/iced) and native iOS app (SwiftUI + Rust core). Users specify a list of cards and the application generates a printable PDF with card images arranged in a grid layout.
 
 ### Key Features
+- **Cross-Platform Support**: Desktop GUI (Rust/iced) and native iOS app (SwiftUI) sharing the same Rust core
 - **Intelligent Double-Faced Card Handling**: Automatically detects when users want specific faces (front vs back) based on input
 - **Fuzzy Name Matching**: Advanced card name resolution with support for split cards and alternative names  
 - **Flexible Set/Language Support**: Parse set codes (2-6 characters) and language specifications in decklists
 - **Comprehensive Caching**: Multi-layer caching for images, search results, card names, and set codes
 - **Meld Card Support**: Handles Magic meld cards (Gisela/Bruna → Brisela) with proper resolution and display
+- **iOS Integration**: Native share sheet support for printing, saving, and sharing generated PDFs
 
 ## Current Issue: Meld Card Bug Investigation (January 9, 2025)
 
@@ -54,6 +56,262 @@ let meld_card = meld_search_result.cards
 - `magic-proxy-core/src/scryfall/models.rs` - Card data model with BackSide enum
 - Search results cache: `/Users/mathiasritzmann/Library/Caches/magic-proxy/search_results_cache.json`
 
+## iOS Native App Implementation (August 15, 2025)
+
+**Status**: ✅ COMPLETED - Native iOS app successfully created and tested
+
+### Overview
+Successfully implemented a native iPad application using SwiftUI + Rust FFI architecture. The iOS app shares the same core PDF generation logic as the desktop application while providing a native iOS user experience.
+
+### Architecture Decision: SwiftUI + Rust Core
+
+**Approach Chosen**: SwiftUI for UI + Rust core via FFI (Foreign Function Interface)
+
+**Alternative Approaches Considered**:
+- Progressive Web App (PWA) - Abandoned due to printpdf library lacking WASM support
+- Tauri Mobile - Less mature ecosystem
+- React Native - Would require JavaScript bridge
+- Buck2 build system - Too early for external users (no stable releases)
+
+**Why SwiftUI + Rust Core**:
+- **Code Reuse**: 100% of PDF generation logic shared between desktop and mobile
+- **Native Performance**: Full native iOS performance and integration
+- **App Store Compatible**: Can be distributed via App Store
+- **Platform Features**: Access to native iOS sharing, printing, and file management
+- **Maintainability**: Single source of truth for core business logic
+
+### Technical Implementation
+
+#### FFI Layer (`magic-proxy-core/src/ffi.rs`)
+```rust
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_generate_pdf_from_decklist(
+    decklist_cstr: *const c_char,
+    output_buffer: *mut *mut u8,
+    output_size: *mut usize,
+) -> c_int
+```
+
+**Memory Management Pattern**:
+- **Rust allocates** PDF data using `malloc`
+- **Swift frees** using dedicated `proxy_free_buffer()` function
+- **Error handling** via C-style error codes with descriptive messages
+
+**Core FFI Functions**:
+- `proxy_initialize()` - Initialize caches (required first call)
+- `proxy_generate_pdf_from_decklist()` - Main PDF generation
+- `proxy_free_buffer()` - Memory cleanup
+- `proxy_test_connection()` - Simple connectivity test (returns 42)
+- `proxy_get_error_message()` - Human-readable error descriptions
+
+#### Swift Integration (`MagicProxyiOS/MagicProxyiOS/ProxyGenerator.swift`)
+```swift
+static func generatePDF(from decklist: String) -> Result<Data, ProxyGeneratorError> {
+    // Initialize, call FFI, handle memory management
+    let data = Data(bytes: buffer, count: size)
+    proxy_free_buffer(buffer) // Critical: prevent memory leaks
+    return .success(data)
+}
+```
+
+**Features**:
+- Type-safe Swift wrapper around C functions
+- Automatic memory management with guard clauses
+- Comprehensive error handling with localized messages
+- Background thread execution to prevent UI blocking
+
+#### SwiftUI Interface (`MagicProxyiOS/MagicProxyiOS/ContentView.swift`)
+```swift
+struct ContentView: View {
+    @State private var decklistText = "1 Lightning Bolt\n1 Counterspell..."
+    @State private var isGenerating = false
+    @State private var pdfData: Data?
+}
+```
+
+**UI Components**:
+- **Text Editor**: Monospaced font for decklist input with sample content
+- **Generate Button**: Progress indication and disabled state during generation
+- **Share Integration**: Native iOS share sheet (`UIActivityViewController`)
+- **Error Display**: User-friendly error messages with retry capability
+- **FFI Test Display**: Shows "42" when Rust connection is working
+
+### Build System
+
+#### iOS Static Library Generation (`build_ios.sh`)
+```bash
+# Build for all iOS targets
+cargo build --release --target aarch64-apple-ios -p magic-proxy-core          # Device
+cargo build --release --target x86_64-apple-ios -p magic-proxy-core           # Simulator x86_64  
+cargo build --release --target aarch64-apple-ios-sim -p magic-proxy-core      # Simulator ARM64
+
+# Create universal simulator library
+lipo -create \
+  target/x86_64-apple-ios/release/libmagic_proxy_core.a \
+  target/aarch64-apple-ios-sim/release/libmagic_proxy_core.a \
+  -output ios-libs/libmagic_proxy_core_sim.a
+```
+
+**Output Files**:
+- `ios-libs/libmagic_proxy_core_device.a` - Physical iOS devices
+- `ios-libs/libmagic_proxy_core_sim.a` - Universal simulator library
+- `ios-libs/magic_proxy.h` - C header for Swift bridging
+
+**Key Build Configuration**:
+```toml
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]  # Enable static library generation
+```
+
+#### Xcode Project Structure
+```
+MagicProxyiOS/
+├── MagicProxyiOS.xcodeproj/           # Xcode project
+│   └── project.pbxproj                # Project configuration
+└── MagicProxyiOS/                     # Source code
+    ├── MagicProxyiOSApp.swift         # App entry point
+    ├── ContentView.swift              # Main UI
+    ├── ProxyGenerator.swift           # FFI wrapper
+    ├── MagicProxyiOS-Bridging-Header.h # C bridging
+    └── Assets.xcassets/               # App icons and colors
+```
+
+### iOS Integration Features
+
+#### Native Share Sheet Integration
+```swift
+sheet(isPresented: $showingShareSheet) {
+    if let pdfData = pdfData {
+        ShareSheet(items: [pdfData])  // UIActivityViewController wrapper
+    }
+}
+```
+
+**Supported Actions**:
+- **Save to Files** - Store in iOS Files app for user access
+- **Print** - Direct printing to AirPrint-enabled printers  
+- **Mail/Messages** - Share via email or text
+- **AirDrop** - Share to nearby Apple devices
+- **Save to Books** - View PDFs in Apple Books app
+
+#### File Access Patterns
+**App Sandbox**: `/Users/.../Library/Developer/CoreSimulator/Devices/.../data/Containers/Data/Application/.../`
+- `Documents/` - App documents (persistent)
+- `Library/` - App library files  
+- `tmp/` - Temporary files (system cleaned)
+
+**User Access Methods**:
+1. **Files App**: "On My iPad" → "MagicProxyiOS" folder
+2. **Share Sheet**: User-controlled save locations
+3. **Simulator Menu**: Device → Photos/Documents (development only)
+
+### Development Workflow
+
+#### Building and Testing
+```bash
+# 1. Build iOS static libraries
+./build_ios.sh
+
+# 2. Build iOS app for simulator
+cd MagicProxyiOS
+xcodebuild -project MagicProxyiOS.xcodeproj -scheme MagicProxyiOS \
+  -destination 'platform=iOS Simulator,name=iPad Air 11-inch (M3)' build
+
+# 3. Install and run on simulator
+xcrun simctl install "iPad Air 11-inch (M3)" "./path/to/MagicProxyiOS.app"
+xcrun simctl launch "iPad Air 11-inch (M3)" com.magicproxy.MagicProxyiOS
+```
+
+#### Opening for Development
+```bash
+# Option 1: Open Xcode project
+cd MagicProxyiOS && open MagicProxyiOS.xcodeproj
+
+# Option 2: Open simulator directly
+open -a Simulator
+```
+
+### Key Design Decisions
+
+#### Memory Management
+**Decision**: Rust allocates with `malloc`, Swift frees with dedicated function
+**Rationale**: 
+- Standard C pattern familiar to iOS developers
+- Clear ownership boundaries (Rust creates, Swift destroys)
+- Prevents memory leaks through dedicated cleanup function
+- Compatible with Swift's automatic reference counting
+
+#### Error Handling Strategy
+**Decision**: C-style error codes with separate message function
+**Rationale**:
+- Simple FFI interface (integers cross language boundaries easily)
+- Detailed error messages available when needed
+- Swift can wrap in proper `Result<T, Error>` types
+- Compatible with iOS error handling patterns
+
+#### Face Mode Default
+**Decision**: `DoubleFaceMode::BothSides` for iOS
+**Rationale**:
+- Mobile users likely want to see both sides of double-faced cards
+- Consistent with desktop default behavior
+- Can be customized in future versions if needed
+
+#### UI Design Philosophy
+**Decision**: Native SwiftUI with iOS design patterns
+**Rationale**:
+- Feels natural to iOS users (not like a ported desktop app)
+- Leverages iOS share sheet for maximum compatibility
+- Uses standard iOS navigation and layout patterns
+- Optimized for iPad screen sizes and touch interaction
+
+### Testing and Verification
+
+#### Functional Testing
+- ✅ **FFI Connection**: Test function returns 42 (connectivity verified)
+- ✅ **PDF Generation**: Sample decklists generate valid PDFs
+- ✅ **Error Handling**: Invalid input produces user-friendly error messages
+- ✅ **Share Sheet**: PDFs successfully shared via all iOS mechanisms
+- ✅ **Memory Management**: No memory leaks during PDF generation cycles
+
+#### Performance Testing
+- ✅ **Generation Speed**: Comparable to desktop version (same core logic)
+- ✅ **UI Responsiveness**: Background generation prevents UI blocking
+- ✅ **Memory Usage**: Efficient memory cleanup after PDF generation
+
+### Current Limitations and Future Enhancements
+
+#### Current Limitations
+- **Cache Location**: Uses default cache directory (not user-configurable)
+- **Face Mode**: Fixed to `BothSides` (no user setting)
+- **Image Preview**: No grid preview (desktop-only feature)
+- **Set Selection**: No alternative printing selection
+
+#### Future Enhancements
+- **Settings Screen**: Allow cache management and face mode selection
+- **Grid Preview**: Port desktop preview functionality to SwiftUI
+- **Print Selection**: Alternative card printings selection
+- **Background Sync**: Cache warm-up on app launch
+- **iPhone Support**: Adapt UI for smaller screens
+
+### Files and Structure
+
+#### Core FFI Files
+- `magic-proxy-core/src/ffi.rs` - C-compatible functions for iOS
+- `magic-proxy-core/include/magic_proxy.h` - C header for Swift bridging
+- `build_ios.sh` - iOS static library build script
+
+#### iOS Application Files  
+- `MagicProxyiOS/MagicProxyiOS/MagicProxyiOSApp.swift` - App entry point and initialization
+- `MagicProxyiOS/MagicProxyiOS/ContentView.swift` - Main SwiftUI interface
+- `MagicProxyiOS/MagicProxyiOS/ProxyGenerator.swift` - Swift FFI wrapper
+- `MagicProxyiOS/MagicProxyiOS/MagicProxyiOS-Bridging-Header.h` - C to Swift bridge
+- `MagicProxyiOS/MagicProxyiOS.xcodeproj/project.pbxproj` - Xcode project configuration
+
+#### Generated Build Artifacts
+- `ios-libs/libmagic_proxy_core_device.a` - Device static library
+- `ios-libs/libmagic_proxy_core_sim.a` - Simulator static library  
+- `ios-libs/magic_proxy.h` - C header file for integration
+
 ## Key Dependencies
 
 - **iced** - Cross-platform GUI framework (Elm-inspired architecture)
@@ -66,11 +324,19 @@ let meld_card = meld_search_result.cards
 
 ## Development Commands
 
-### Build and Run
+### Build and Run (Desktop)
 - `cargo build` - Compile the project
 - `cargo run -p magic-proxy-gui` - Build and run the GUI application
 - `cargo run -p magic-proxy-cli` - Build and run the CLI application
 - `cargo check` - Check for compilation errors without building
+
+### Build and Run (iOS)
+- `./build_ios.sh` - Build iOS static libraries for device and simulator
+- `cd MagicProxyiOS && xcodebuild -project MagicProxyiOS.xcodeproj -scheme MagicProxyiOS -destination 'platform=iOS Simulator,name=iPad Air 11-inch (M3)' build` - Build iOS app
+- `xcrun simctl install "iPad Air 11-inch (M3)" "./path/to/MagicProxyiOS.app"` - Install on simulator
+- `xcrun simctl launch "iPad Air 11-inch (M3)" com.magicproxy.MagicProxyiOS` - Launch iOS app
+- `open -a Simulator` - Open iOS Simulator for manual testing
+- `cd MagicProxyiOS && open MagicProxyiOS.xcodeproj` - Open in Xcode for development
 
 ### Testing and Quality
 - `cargo test` - Run all tests

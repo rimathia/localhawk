@@ -3,6 +3,7 @@ pub mod cache;
 pub mod card_name_cache;
 pub mod decklist;
 pub mod error;
+pub mod ffi;
 pub mod format;
 pub mod globals;
 pub mod layout;

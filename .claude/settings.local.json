@@ -25,7 +25,10 @@
       "Bash(env RUST_LOG=debug cargo run --bin magic-proxy-cli search \"Gisela, the Broken Blade\")",
       "Bash(jq:*)",
       "Bash(curl:*)",
-      "Bash(cargo fmt:*)"
+      "Bash(cargo fmt:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(rustup target:*)",
+      "Bash(./build_ios.sh)"
     ],
     "deny": []
   }

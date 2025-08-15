@@ -2492,6 +2492,7 @@ dependencies = [
  "directories",
  "itertools",
  "lazy_static",
+ "libc",
  "log",
  "ngrammatic",
  "ord_subset",
