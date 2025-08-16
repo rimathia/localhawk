@@ -9,464 +9,45 @@ Magic Card Proxy Sheet Generator - A cross-platform application that creates PDF
 ### Key Features
 - **Cross-Platform Support**: Desktop GUI (Rust/iced) and native iOS app (SwiftUI) sharing the same Rust core
 - **Intelligent Double-Faced Card Handling**: Automatically detects when users want specific faces (front vs back) based on input
-- **Fuzzy Name Matching**: Advanced card name resolution with support for split cards and alternative names  
-- **Flexible Set/Language Support**: Parse set codes (2-6 characters) and language specifications in decklists
-- **Comprehensive Caching**: Multi-layer caching for images, search results, card names, and set codes
+- **Fuzzy Name Matching**: Advanced card name resolution with support for split cards and alternative names
+- **Set/Language Support**: Parse set codes and language specifications in decklists according to what occurs in scryfall
+- **Caching**: Caches images, card search results, card names, and set codes
 - **Meld Card Support**: Handles Magic meld cards (Gisela/Bruna → Brisela) with proper resolution and display
 - **iOS Integration**: Native share sheet support for printing, saving, and sharing generated PDFs
 
-## Current Issue: Meld Card Bug Investigation (January 9, 2025)
+## iOS Native App Implementation
 
-**Status**: ✅ RESOLVED - Fixed pagination logic for meld cards
+**Status**: ✅ COMPLETED - Native iPad application using SwiftUI + Rust FFI architecture
 
-### Problem (FIXED)
-- ~~Gisela shows correctly: Gisela front + Brisela meld result ✅~~
-- ~~Bruna shows incorrectly: Bruna front + Bruna front (instead of Brisela) ❌~~
-- **Fix Applied**: Corrected grid preview pagination logic to properly handle meld result images across page boundaries
+### Architecture
+- **SwiftUI for UI** + **Rust core via FFI** for 100% code reuse of PDF generation logic
+- **Memory Management**: Rust allocates with `malloc`, Swift frees with dedicated `proxy_free_buffer()` 
+- **Error Handling**: C-style error codes with descriptive message functions
+- **Native iOS Integration**: Share sheet, AirPrint, Files app, background cache persistence
 
-### Root Cause Analysis (Completed)
-1. **✅ Meld resolution logic works**: API calls succeed, debug logs confirm "Found meld result 'brisela, voice of nightmares'"
-2. **✅ Scryfall API returns correct data**: Direct API query shows proper Brisela cards with correct image URLs
-3. **❌ Bug in result selection logic**: The issue is in `resolve_meld_result()` set matching/fallback logic
-
-### Technical Details
-**Problem Location**: `magic-proxy-core/src/scryfall/api.rs:137-142`
-```rust
-let meld_card = meld_search_result.cards
-    .iter()
-    .find(|meld_card| meld_card.set == card.set)
-    .or_else(|| meld_search_result.cards.first()) // BUG: May select wrong card
-```
-
-**Issue**: When searching for "brisela, voice of nightmares", somehow Bruna cards are getting into `meld_search_result.cards` despite the exact name filtering in `search_card_internal()`. The `.first()` fallback then selects Bruna instead of Brisela.
-
-### Evidence
-- **Cache data shows**: Bruna's `meld_result_image_url` = `6fccdb60-5fce-4a6e-a709-b986f9a4b653.jpg` (Bruna's front image)
-- **API returns**: Only legitimate Brisela cards with proper Brisela image URLs
-- **Conclusion**: Name filtering logic is failing, allowing wrong cards through
-
-### Next Steps
-1. **Debug the exact name filtering** in `search_card_internal()` - why are Bruna cards passing the filter?
-2. **Fix result selection logic** - ensure fallback only selects cards with correct names
-3. **Add validation** - verify selected meld result has expected name before assignment
-4. **Test thoroughly** with both Gisela and Bruna to confirm fix
-
-### Files Involved
-- `magic-proxy-core/src/scryfall/api.rs` - Meld resolution logic (lines 120-155)
-- `magic-proxy-core/src/scryfall/models.rs` - Card data model with BackSide enum
-- Search results cache: `/Users/mathiasritzmann/Library/Caches/magic-proxy/search_results_cache.json`
-
-## iOS Native App Implementation (August 15, 2025)
-
-**Status**: ✅ COMPLETED - Native iOS app successfully created and tested
-
-### Overview
-Successfully implemented a native iPad application using SwiftUI + Rust FFI architecture. The iOS app shares the same core PDF generation logic as the desktop application while providing a native iOS user experience.
-
-### Architecture Decision: SwiftUI + Rust Core
-
-**Approach Chosen**: SwiftUI for UI + Rust core via FFI (Foreign Function Interface)
-
-**Alternative Approaches Considered**:
-- Progressive Web App (PWA) - Abandoned due to printpdf library lacking WASM support
-- Tauri Mobile - Less mature ecosystem
-- React Native - Would require JavaScript bridge
-- Buck2 build system - Too early for external users (no stable releases)
-
-**Why SwiftUI + Rust Core**:
-- **Code Reuse**: 100% of PDF generation logic shared between desktop and mobile
-- **Native Performance**: Full native iOS performance and integration
-- **App Store Compatible**: Can be distributed via App Store
-- **Platform Features**: Access to native iOS sharing, printing, and file management
-- **Maintainability**: Single source of truth for core business logic
-
-### Technical Implementation
-
-#### FFI Layer (`magic-proxy-core/src/ffi.rs`)
-```rust
-#[unsafe(no_mangle)]
-pub extern "C" fn proxy_generate_pdf_from_decklist(
-    decklist_cstr: *const c_char,
-    output_buffer: *mut *mut u8,
-    output_size: *mut usize,
-) -> c_int
-```
-
-**Memory Management Pattern**:
-- **Rust allocates** PDF data using `malloc`
-- **Swift frees** using dedicated `proxy_free_buffer()` function
-- **Error handling** via C-style error codes with descriptive messages
-
-**Core FFI Functions**:
+### Key FFI Functions (`magic-proxy-core/src/ffi.rs`)
 - `proxy_initialize()` - Initialize caches (required first call)
 - `proxy_generate_pdf_from_decklist()` - Main PDF generation
 - `proxy_free_buffer()` - Memory cleanup
-- `proxy_test_connection()` - Simple connectivity test (returns 42)
-- `proxy_get_error_message()` - Human-readable error descriptions
-
-#### Swift Integration (`MagicProxyiOS/MagicProxyiOS/ProxyGenerator.swift`)
-```swift
-static func generatePDF(from decklist: String) -> Result<Data, ProxyGeneratorError> {
-    // Initialize, call FFI, handle memory management
-    let data = Data(bytes: buffer, count: size)
-    proxy_free_buffer(buffer) // Critical: prevent memory leaks
-    return .success(data)
-}
-```
-
-**Features**:
-- Type-safe Swift wrapper around C functions
-- Automatic memory management with guard clauses
-- Comprehensive error handling with localized messages
-- Background thread execution to prevent UI blocking
-
-#### SwiftUI Interface (`MagicProxyiOS/MagicProxyiOS/ContentView.swift`)
-```swift
-struct ContentView: View {
-    @State private var decklistText = "1 Lightning Bolt\n1 Counterspell..."
-    @State private var isGenerating = false
-    @State private var pdfData: Data?
-}
-```
-
-**UI Components**:
-- **Text Editor**: Monospaced font for decklist input with sample content
-- **Generate Button**: Progress indication and disabled state during generation
-- **Share Integration**: Native iOS share sheet (`UIActivityViewController`)
-- **Error Display**: User-friendly error messages with retry capability
-- **FFI Test Display**: Shows "42" when Rust connection is working
+- `proxy_get_*_cache_stats()` - Cache statistics for Advanced Options
+- `proxy_clear_image_cache()` / `proxy_update_card_names()` - Cache management
 
 ### Build System
-
-#### iOS Static Library Generation (`build_ios.sh`)
 ```bash
-# Build for all iOS targets
-cargo build --release --target aarch64-apple-ios -p magic-proxy-core          # Device
-cargo build --release --target x86_64-apple-ios -p magic-proxy-core           # Simulator x86_64  
-cargo build --release --target aarch64-apple-ios-sim -p magic-proxy-core      # Simulator ARM64
-
-# Create universal simulator library
-lipo -create \
-  target/x86_64-apple-ios/release/libmagic_proxy_core.a \
-  target/aarch64-apple-ios-sim/release/libmagic_proxy_core.a \
-  -output ios-libs/libmagic_proxy_core_sim.a
+./build_ios.sh                                    # Build iOS static libraries
+cd MagicProxyiOS && open MagicProxyiOS.xcodeproj  # Open in Xcode
 ```
 
-**Output Files**:
+**Build Artifacts**:
 - `ios-libs/libmagic_proxy_core_device.a` - Physical iOS devices
 - `ios-libs/libmagic_proxy_core_sim.a` - Universal simulator library
 - `ios-libs/magic_proxy.h` - C header for Swift bridging
 
-**Key Build Configuration**:
-```toml
-[lib]
-crate-type = ["cdylib", "staticlib", "rlib"]  # Enable static library generation
-```
-
-#### Xcode Project Structure
-```
-MagicProxyiOS/
-├── MagicProxyiOS.xcodeproj/           # Xcode project
-│   └── project.pbxproj                # Project configuration
-└── MagicProxyiOS/                     # Source code
-    ├── MagicProxyiOSApp.swift         # App entry point
-    ├── ContentView.swift              # Main UI
-    ├── ProxyGenerator.swift           # FFI wrapper
-    ├── MagicProxyiOS-Bridging-Header.h # C bridging
-    └── Assets.xcassets/               # App icons and colors
-```
-
-### iOS Integration Features
-
-#### Native Share Sheet Integration
-```swift
-sheet(isPresented: $showingShareSheet) {
-    if let pdfData = pdfData {
-        ShareSheet(items: [pdfData])  // UIActivityViewController wrapper
-    }
-}
-```
-
-**Supported Actions**:
-- **Save to Files** - Store in iOS Files app for user access
-- **Print** - Direct printing to AirPrint-enabled printers  
-- **Mail/Messages** - Share via email or text
-- **AirDrop** - Share to nearby Apple devices
-- **Save to Books** - View PDFs in Apple Books app
-
-#### File Access Patterns
-**App Sandbox**: `/Users/.../Library/Developer/CoreSimulator/Devices/.../data/Containers/Data/Application/.../`
-- `Documents/` - App documents (persistent)
-- `Library/` - App library files  
-- `tmp/` - Temporary files (system cleaned)
-
-**User Access Methods**:
-1. **Files App**: "On My iPad" → "MagicProxyiOS" folder
-2. **Share Sheet**: User-controlled save locations
-3. **Simulator Menu**: Device → Photos/Documents (development only)
-
-### Development Workflow
-
-#### Building and Testing
-```bash
-# 1. Build iOS static libraries
-./build_ios.sh
-
-# 2. Build iOS app for simulator
-cd MagicProxyiOS
-xcodebuild -project MagicProxyiOS.xcodeproj -scheme MagicProxyiOS \
-  -destination 'platform=iOS Simulator,name=iPad Air 11-inch (M3)' build
-
-# 3. Install and run on simulator
-xcrun simctl install "iPad Air 11-inch (M3)" "./path/to/MagicProxyiOS.app"
-xcrun simctl launch "iPad Air 11-inch (M3)" com.magicproxy.MagicProxyiOS
-```
-
-#### Opening for Development
-```bash
-# Option 1: Open Xcode project
-cd MagicProxyiOS && open MagicProxyiOS.xcodeproj
-
-# Option 2: Open simulator directly
-open -a Simulator
-```
-
-### Key Design Decisions
-
-#### Memory Management
-**Decision**: Rust allocates with `malloc`, Swift frees with dedicated function
-**Rationale**: 
-- Standard C pattern familiar to iOS developers
-- Clear ownership boundaries (Rust creates, Swift destroys)
-- Prevents memory leaks through dedicated cleanup function
-- Compatible with Swift's automatic reference counting
-
-#### Error Handling Strategy
-**Decision**: C-style error codes with separate message function
-**Rationale**:
-- Simple FFI interface (integers cross language boundaries easily)
-- Detailed error messages available when needed
-- Swift can wrap in proper `Result<T, Error>` types
-- Compatible with iOS error handling patterns
-
-#### Face Mode Default
-**Decision**: `DoubleFaceMode::BothSides` for iOS
-**Rationale**:
-- Mobile users likely want to see both sides of double-faced cards
-- Consistent with desktop default behavior
-- Can be customized in future versions if needed
-
-#### UI Design Philosophy
-**Decision**: Native SwiftUI with iOS design patterns
-**Rationale**:
-- Feels natural to iOS users (not like a ported desktop app)
-- Leverages iOS share sheet for maximum compatibility
-- Uses standard iOS navigation and layout patterns
-- Optimized for iPad screen sizes and touch interaction
-
-### Testing and Verification
-
-#### Functional Testing
-- ✅ **FFI Connection**: Test function returns 42 (connectivity verified)
-- ✅ **PDF Generation**: Sample decklists generate valid PDFs
-- ✅ **Error Handling**: Invalid input produces user-friendly error messages
-- ✅ **Share Sheet**: PDFs successfully shared via all iOS mechanisms
-- ✅ **Memory Management**: No memory leaks during PDF generation cycles
-
-#### Performance Testing
-- ✅ **Generation Speed**: Comparable to desktop version (same core logic)
-- ✅ **UI Responsiveness**: Background generation prevents UI blocking
-- ✅ **Memory Usage**: Efficient memory cleanup after PDF generation
-
-### Current Limitations and Future Enhancements
-
-#### Current Limitations
-- **Cache Location**: Uses default cache directory (not user-configurable)
-- **Face Mode**: Fixed to `BothSides` (no user setting)
-- **Image Preview**: No grid preview (desktop-only feature)
-- **Set Selection**: No alternative printing selection
-
-#### Future Enhancements
-- **Settings Screen**: Allow cache management and face mode selection
-- **Grid Preview**: Port desktop preview functionality to SwiftUI
-- **Print Selection**: Alternative card printings selection
-- **Background Sync**: Cache warm-up on app launch
-- **iPhone Support**: Adapt UI for smaller screens
-
-### Files and Structure
-
-#### Core FFI Files
-- `magic-proxy-core/src/ffi.rs` - C-compatible functions for iOS
-- `magic-proxy-core/include/magic_proxy.h` - C header for Swift bridging
-- `build_ios.sh` - iOS static library build script
-
-#### iOS Application Files  
-- `MagicProxyiOS/MagicProxyiOS/MagicProxyiOSApp.swift` - App entry point and initialization
-- `MagicProxyiOS/MagicProxyiOS/ContentView.swift` - Main SwiftUI interface
-- `MagicProxyiOS/MagicProxyiOS/AdvancedOptionsView.swift` - Cache statistics and management interface
-- `MagicProxyiOS/MagicProxyiOS/ProxyGenerator.swift` - Swift FFI wrapper
-- `MagicProxyiOS/MagicProxyiOS/MagicProxyiOS-Bridging-Header.h` - C to Swift bridge
-- `MagicProxyiOS/MagicProxyiOS.xcodeproj/project.pbxproj` - Xcode project configuration
-
-#### Generated Build Artifacts
-- `ios-libs/libmagic_proxy_core_device.a` - Device static library
-- `ios-libs/libmagic_proxy_core_sim.a` - Simulator static library  
-- `ios-libs/magic_proxy.h` - C header file for integration
-
-### iOS Advanced Options Interface (August 16, 2025)
-
-**Status**: ✅ COMPLETED - Full cache statistics and management interface implemented
-
-#### Overview
-Successfully implemented a comprehensive Advanced Options interface for the iOS app, providing users with detailed cache statistics and management capabilities that match the desktop application's functionality.
-
-#### Features Implemented
-
-##### Cache Statistics Display
-- **Real-time Statistics**: Live display of cache counts, size estimates, and status
-- **Three Cache Types**: Image cache, search results cache, and card names database
-- **Visual Design**: Color-coded cards (blue, orange, green) with consistent typography
-- **Size Estimates**: Memory usage calculations displayed in user-friendly MB format
-
-##### Cache Management Actions
-- **Image Cache**: Clear functionality to free up storage space
-- **Card Names Database**: Force update from Scryfall API with progress indication
-- **Search Results Cache**: View statistics (clear functionality planned for future)
-
-##### Mobile-Optimized UI Design
-- **Expandable Path Display**: Shows path tail by default, expands to full path on tap
-- **Modal Presentation**: Gear icon in navigation bar opens full-screen sheet
-- **Smooth Animations**: 0.2s ease-in-out transitions for path expansion
-- **Native iOS Patterns**: Standard navigation, buttons, and layout conventions
-
-#### Technical Implementation
-
-##### FFI Cache Functions (`magic-proxy-core/src/ffi.rs`)
-```rust
-// Cache statistics structure
-#[repr(C)]
-pub struct CacheStats {
-    pub count: u32,
-    pub size_mb: f64,
-}
-
-// FFI functions for iOS integration
-pub extern "C" fn proxy_get_image_cache_stats() -> CacheStats
-pub extern "C" fn proxy_get_search_cache_stats() -> CacheStats
-pub extern "C" fn proxy_get_card_names_cache_stats() -> CacheStats
-pub extern "C" fn proxy_clear_image_cache() -> c_int
-pub extern "C" fn proxy_update_card_names() -> c_int
-pub extern "C" fn proxy_save_caches() -> c_int
-
-// Cache path functions for accurate display
-pub extern "C" fn proxy_get_image_cache_path() -> *mut c_char
-pub extern "C" fn proxy_get_search_cache_path() -> *mut c_char
-pub extern "C" fn proxy_get_card_names_cache_path() -> *mut c_char
-pub extern "C" fn proxy_free_string(ptr: *mut c_char)
-```
-
-##### Swift Wrapper Functions (`MagicProxyiOS/MagicProxyiOS/ProxyGenerator.swift`)
-```swift
-// Cache statistics wrapper
-static func getImageCacheStats() -> CacheStatistics {
-    let stats = proxy_get_image_cache_stats()
-    return CacheStatistics(count: stats.count, sizeMB: stats.size_mb)
-}
-
-// Cache path retrieval with automatic memory management
-static func getImageCachePath() -> String? {
-    guard let cString = proxy_get_image_cache_path() else { return nil }
-    defer { proxy_free_string(cString) }
-    return String(cString: cString)
-}
-
-// Cache management operations
-static func clearImageCache() -> Result<Void, ProxyGeneratorError>
-static func updateCardNames() -> Result<Void, ProxyGeneratorError>
-static func saveCaches() -> Result<Void, ProxyGeneratorError>
-```
-
-##### SwiftUI Components (`MagicProxyiOS/MagicProxyiOS/AdvancedOptionsView.swift`)
-
-**AdvancedOptionsView**: Main interface with cache statistics cards and management controls
-
-**CacheStatCard**: Reusable component for individual cache display
-- Color-coded backgrounds and borders
-- Statistics display with bullet points
-- Action buttons for cache operations
-- Expandable path display integration
-
-**ExpandablePathView**: Smart path truncation component
-```swift
-private var truncatedPath: String {
-    let maxLength = 35 // Character limit for one line
-    if path.count <= maxLength {
-        return path
-    }
-    // Show "..." + tail that fits
-    let tailLength = maxLength - 3
-    let startIndex = path.index(path.endIndex, offsetBy: -tailLength)
-    return "..." + path[startIndex...]
-}
-```
-
-#### Architecture Consistency
-
-##### Cache Path Centralization
-Successfully refactored all cache implementations to use centralized path functions from `globals.rs`, ensuring 100% consistency between displayed paths and actual file locations:
-
-- **ImageCache** → Uses `get_cache_directory_path()`
-- **CardNameCache** → Uses `get_card_names_cache_path()`
-- **SearchResultsCache** → Uses `get_search_cache_path()`
-- **SetCodesCache** → Uses `get_set_codes_cache_path()`
-- **LRU Implementations** → Use centralized path functions
-
-##### Cache Persistence Strategy
-Implemented hybrid approach for iOS app lifecycle:
-- **Background Save**: Automatic cache saving when app backgrounds/terminates
-- **Manual Save**: `save_caches()` function for explicit persistence
-- **Consistent API**: Same persistence interface across desktop and iOS
-
-#### User Experience
-
-##### Navigation Integration
-- **Gear Icon**: Standard iOS settings icon in navigation bar
-- **Sheet Presentation**: Modal overlay respects system appearance
-- **Done Button**: Clear dismissal action in navigation bar
-
-##### Error Handling
-- **User-Friendly Messages**: Clear error descriptions for failed operations
-- **Progress Indication**: "Updating..." state for long-running operations
-- **Success Feedback**: Temporary success messages with auto-dismiss
-
-##### Accessibility
-- **VoiceOver Support**: Proper text labels and hint text
-- **Touch Targets**: Sufficient size for tap gestures
-- **Color Independence**: Information conveyed through text, not just color
-
-#### Files Updated
-- `MagicProxyiOS/MagicProxyiOS/AdvancedOptionsView.swift` - Complete Advanced Options interface
-- `MagicProxyiOS/MagicProxyiOS/ContentView.swift` - Navigation integration with gear icon
-- `MagicProxyiOS/MagicProxyiOS/ProxyGenerator.swift` - Swift FFI wrapper functions
-- `MagicProxyiOS/MagicProxyiOS/MagicProxyiOSApp.swift` - Background cache saving
-- `magic-proxy-core/src/ffi.rs` - FFI functions for cache operations and paths
-- `magic-proxy-core/src/globals.rs` - Centralized cache path functions
-- `magic-proxy-core/include/magic_proxy.h` - C header declarations
-
-#### Testing Verification
-- ✅ **Cache Statistics**: Real-time display of accurate cache information
-- ✅ **Path Display**: Truncated paths expand correctly on tap
-- ✅ **Image Cache Clear**: Successfully clears cached images and updates UI
-- ✅ **Card Names Update**: Downloads fresh data with progress indication
-- ✅ **Background Persistence**: Caches saved when app backgrounds
-- ✅ **Memory Management**: Proper cleanup of FFI strings
-- ✅ **UI Responsiveness**: Smooth animations and native iOS feel
-
-#### Future Enhancements
-- **Search Cache Clear**: Implement clear functionality for search results cache
-- **Cache Size Limits**: User-configurable cache size limits
-- **Cache Analytics**: Detailed usage statistics and optimization suggestions
-- **Offline Mode**: Cache validation and offline functionality indicators
+### iOS App Features
+- **Main Interface**: Text editor for decklist input with native share sheet integration
+- **Advanced Options**: Cache statistics display and management (gear icon in navigation)
+- **Cache Management**: Real-time statistics, clear image cache, update card names database
+- **Mobile-Optimized UI**: Expandable path display, color-coded cache cards, smooth animations
 
 ## Key Dependencies
 
@@ -512,7 +93,7 @@ Implemented hybrid approach for iOS app lifecycle:
 - **Temporary underscore prefix** - Only use underscore prefix as a temporary measure during development when you know code will be used later
 - Examples:
   - ✅ `_response` for an unused function parameter
-  - ✅ `_future_field` for a struct field reserved for future use  
+  - ✅ `_future_field` for a struct field reserved for future use
   - ❌ `_calculate_total_pages` for a method that was used but is now dead code (remove instead)
   - ❌ `_helper_function` for a function that is actively called (rename to `helper_function`)
 
@@ -589,7 +170,7 @@ pub struct ScryfallClient {
 ```rust
 pub struct Card {
     pub name: String,
-    pub set: String, 
+    pub set: String,
     pub language: String,
     pub border_crop: String,           // Front image URL
     pub border_crop_back: Option<String>, // Back image for double-faced cards
@@ -603,7 +184,7 @@ pub struct DecklistEntry {
     pub multiple: i32,
     pub name: String,
     pub set: Option<String>,           // Parsed from [SET] notation
-    pub lang: Option<String>,          // Parsed from [LANG] notation  
+    pub lang: Option<String>,          // Parsed from [LANG] notation
     pub face_mode: DoubleFaceMode,     // Fully resolved face preference (replaced preferred_face)
     pub source_line_number: Option<usize>, // Line number in original decklist for debugging
 }
@@ -617,7 +198,7 @@ pub struct DecklistEntry {
 
 ### PDF Layout Logic
 - Uses `printpdf::ImageTransform` for positioning and scaling
-- Centers 3x3 grid on A4 page with margins  
+- Centers 3x3 grid on A4 page with margins
 - Each card scaled to maintain aspect ratio
 - Supports multiple pages for large card lists
 
@@ -625,7 +206,7 @@ pub struct DecklistEntry {
 ```rust
 pub enum DoubleFaceMode {
     FrontOnly,    // Include only front face of double-faced cards
-    BackOnly,     // Include only back face of double-faced cards  
+    BackOnly,     // Include only back face of double-faced cards
     BothSides,    // Include both faces as separate cards (default)
 }
 ```
@@ -696,7 +277,7 @@ The application uses a sophisticated multi-layered caching system optimized for 
 - **GUI Access**: `get_cached_image_bytes()` provides raw bytes for direct use with `iced::widget::Image`
 - **Size Limit**: 1 GB by default (`DEFAULT_MAX_SIZE_MB = 1000`)
 - **Eviction**: LRU (Least Recently Used) when cache exceeds size limit
-- **Persistence Strategy**: 
+- **Persistence Strategy**:
   - **Runtime**: Pure in-memory operations (no disk I/O)
   - **Startup**: Load metadata and existing images from disk
   - **Shutdown**: Save metadata to disk via `shutdown_caches()`
@@ -779,7 +360,7 @@ This is a Rust workspace with multiple crates:
 - `src/lib.rs` - Main ProxyGenerator API and public interface
 - `src/scryfall/` - Scryfall API integration
   - `client.rs` - HTTP client with rate limiting
-  - `models.rs` - Card data structures  
+  - `models.rs` - Card data structures
   - `api.rs` - API endpoint implementations (with exact name matching)
 - `src/pdf/mod.rs` - PDF generation and layout logic with DoubleFaceMode support
 - `src/decklist/mod.rs` - Decklist parsing with set/language detection (2-6 char set codes)
@@ -830,9 +411,9 @@ let entries = ProxyGenerator::parse_and_resolve_decklist(decklist, global_face_m
 
 // Generate PDF with per-card face modes
 let cards: Vec<(Card, u32, DoubleFaceMode)> = /* ... build from entries ... */;
-let pdf_options = PdfOptions { 
+let pdf_options = PdfOptions {
     double_face_mode: DoubleFaceMode::BothSides,
-    ..Default::default() 
+    ..Default::default()
 };
 let pdf_data = ProxyGenerator::generate_pdf_from_cards_with_face_modes(
     &cards, pdf_options, |current, total| {
@@ -865,7 +446,7 @@ shutdown_caches().await?;
 
 ### Decklist Parsing
 - **Set codes**: Supports 2-6 character codes (regex: `[\dA-Za-z]{2,6}`)
-- **Examples**: "BRO", "PLST", "PMPS08", "30A", "H2R" 
+- **Examples**: "BRO", "PLST", "PMPS08", "30A", "H2R"
 - **Language codes**: Standard 2-letter codes (JA, FR, DE, etc.)
 - **Format**: `4 Lightning Bolt [BRO]` or `1 Memory Lapse [JA]`
 
@@ -874,263 +455,53 @@ shutdown_caches().await?;
 - **Proper URL encoding**: Handles special characters like "//" in card names
 - **Result filtering**: Only returns cards that match the search criteria
 
-## Multi-Page Grid Preview with Print Selection
+## Desktop GUI Features
 
-**Status**: ✅ IMPLEMENTED
+### Multi-Page Grid Preview with Print Selection
+**Status**: ✅ IMPLEMENTED - Visual PDF preview with per-card print selection capabilities
 
-This feature extends beyond MagicHawk's functionality by providing visual PDF preview with per-card print selection capabilities. Users can now preview exactly what their PDF will look like and select alternative printings for each decklist entry.
+#### Core Features
+- **Entry-Based Selection**: One print choice per decklist entry affects all copies (`4x Lightning Bolt` = one selection)
+- **3x3 Grid Preview**: Exact PDF page layout preview with page navigation
+- **Print Selection Modal**: 4x4 thumbnail grid showing all available printings with set/language overlays
+- **Set Hint Integration**: `[LEA]` in decklist becomes default selection in print picker
 
-### Core Concept
-
-Users can preview exactly what their PDF will look like as 3x3 grids (one per PDF page) and click on any card to select from alternative printings for that decklist entry.
-
-### Key Design Principles
-
-#### Entry-Based Print Selection
-- **One selection per decklist entry**: `4x Lightning Bolt` = one print selection affecting all 4 card images
-- **Consistent behavior**: All copies of the same decklist entry use the same selected printing
-- **Leverages existing logic**: Builds on current `DecklistEntry` structure and set/language parsing
-
-#### Multi-Page Preview System
-- **Page-by-page grids**: Each PDF page (9 cards) gets its own 3x3 preview grid
-- **Navigation controls**: Previous/Next buttons with "Page X of Y" indicator  
-- **Independent selections**: Print choices on different pages are managed separately
-- **Persistent state**: Navigate away and back - all selections are maintained
-
-#### Integration with Existing Set Selection
-- **Set hints become defaults**: `[LEA]` in decklist makes LEA the initial selection in print picker
-- **User override capability**: Any manual selection supersedes the automatic set hint
-- **Backward compatibility**: Existing decklist parsing behavior remains unchanged
-
-### Data Structure Design
-
+#### Key Data Structures
 ```rust
-/// Multi-page grid preview state
 pub struct GridPreview {
-    pub entries: Vec<PreviewEntry>,     // One per decklist entry
-    pub current_page: usize,            // 0-indexed current page
-    pub total_pages: usize,             // Calculated from card count
+    pub entries: Vec<PreviewEntry>,           // One per decklist entry
+    pub current_page: usize,                  // Page navigation
     pub selected_entry_index: Option<usize>, // For print selection modal
 }
 
-/// Represents one decklist entry with all its printings and positions
 pub struct PreviewEntry {
-    pub decklist_entry: DecklistEntry,     // Original "4x Lightning Bolt [LEA]"
-    pub available_printings: Vec<Card>,    // All printings found from search
-    pub selected_printing: Option<usize>,  // Index into available_printings
-    pub grid_positions: Vec<GridPosition>, // Where this entry's cards appear
-}
-
-/// Individual card position in the grid layout
-pub struct GridPosition {
-    pub page: usize,                    // Which page this position is on
-    pub position_in_page: usize,        // 0-8 position within 3x3 grid
-    pub entry_index: usize,             // Back-reference to parent entry
-    pub copy_number: usize,             // 1st, 2nd, 3rd, 4th copy of entry
-}
-
-/// Page navigation state
-pub struct PageNavigation {
-    pub current_page: usize,            // Current page being viewed
-    pub total_pages: usize,             // Total pages calculated from cards
-    pub can_go_prev: bool,              // Navigation state
-    pub can_go_next: bool,
+    pub decklist_entry: DecklistEntry,       // Original entry
+    pub available_printings: Vec<Card>,      // All printings from search
+    pub selected_printing: Option<usize>,    // User's choice
+    pub grid_positions: Vec<GridPosition>,   // Card positions on pages
 }
 ```
 
-### UI/UX Design
-
-#### Grid Preview Interface
-- **Visual accuracy**: 3x3 grids show exact PDF page layout
-- **Entry grouping**: Visual indicators (borders, badges) show which cards belong to same entry
-- **Hover effects**: Highlight all positions of same entry when hovering over any instance
-- **Click interaction**: Click any card instance → open print selection for entire entry
-
-#### Print Selection Modal
-- **Modal title**: "Select printing for 4x Lightning Bolt [current: LEA]"
-- **Thumbnail grid**: Show all available printings as clickable thumbnails
-- **Set/language info**: Overlay on each thumbnail showing set code and language
-- **Default selection**: Highlight the set hint from decklist (`[LEA]`) if available
-- **Immediate update**: Modal closes → all related grid positions update instantly
-
-#### Page Navigation
-- **Navigation bar**: "Page 1 of 4" with Previous/Next buttons
-- **Page indicators**: Show completion status (e.g., "3 custom selections on this page")
-- **Keyboard shortcuts**: Arrow keys for page navigation, ESC to close modals
-
-### New Message Types
-
-```rust
-pub enum Message {
-    // Existing messages remain unchanged...
-    
-    // Grid preview lifecycle
-    BuildGridPreview,
-    GridPreviewBuilt(Result<GridPreview, String>),
-    
-    // Page navigation
-    NextPage,
-    PrevPage,
-    GoToPage(usize),
-    
-    // Print selection
-    ShowPrintSelection(usize),          // Entry index
-    SelectPrint { 
-        entry_index: usize, 
-        print_index: usize 
-    },
-    ClosePrintSelection,
-    
-    // Image loading for preview
-    PreviewImageLoaded(String, Vec<u8>), // URL, image data
-}
-```
-
-### State Integration
-
-The preview system extends the existing `AppState` structure:
-
-```rust
-pub struct AppState {
-    // Existing fields remain unchanged...
-    
-    // New preview-related fields
-    pub grid_preview: Option<GridPreview>,
-    pub page_navigation: Option<PageNavigation>,
-    pub preview_mode: PreviewMode,
-    pub preview_images: HashMap<String, Vec<u8>>, // Image cache for previews
-}
-
-pub enum PreviewMode {
-    Hidden,           // Traditional workflow (parse → generate)
-    GridPreview,      // Show 3x3 grid preview
-    PrintSelection,   // Modal for selecting prints
-}
-```
-
-### Implementation Status
-
-#### Phase 1: Core Data Structures ✅ COMPLETED
-1. ✅ Added preview-related structs to `src/app.rs` (`GridPreview`, `PreviewEntry`, `GridPosition`)
-2. ✅ Extended `AppState` with preview fields and `PreviewMode` enum
-3. ✅ Implemented grid position calculation logic
-4. ✅ Added new message types and handlers
-
-#### Phase 2: Grid Preview UI ✅ COMPLETED  
-1. ✅ Created 3x3 grid view with actual card images (no spacing, PDF-accurate)
-2. ✅ Implemented page navigation controls with Previous/Next buttons
-3. ✅ Added visual card display with fallback to loading text
-4. ✅ Handle click events for entry selection and print modal
-
-#### Phase 3: Print Selection Modal ✅ COMPLETED
-1. ✅ Created modal overlay showing alternative printings
-2. ✅ Implemented 4x4 thumbnail grid for print selection with actual images
-3. ✅ Added set/language info overlays on thumbnails
-4. ✅ Handle selection and grid update logic
-
-#### Phase 4: Integration & Polish ✅ MOSTLY COMPLETED
-1. ✅ Wired into existing decklist parsing workflow
-2. 🔄 Keyboard shortcuts and accessibility features (basic implementation)
-3. 🔄 Hover effects and visual feedback (future enhancement)
-4. ✅ Added loading states and error handling
-
-### Workflow Integration
-
-The feature integrates seamlessly into the existing workflow:
-
-**Current**: `Parse Decklist → Generate PDF → Save`
+#### Workflow Integration
 **Enhanced**: `Parse Decklist → Preview Pages → [Optional: Customize Prints] → Generate PDF → Save`
 
-Users can still use the traditional workflow (skip preview) or take advantage of the enhanced print selection capabilities.
+### Advanced Options Sidebar
+- **Toggleable sidebar** (480px) with card name database and image cache management
+- **Cache Statistics**: Real-time display of counts, sizes, and cache paths
+- **Visual Design**: Color-coded sections with consistent typography and smooth animations
 
-### Technical Benefits
+## Architecture Notes
 
-- **Builds on existing architecture**: Leverages `DecklistEntry`, `CardSearchResult`, and image caching
-- **Minimal disruption**: Current functionality remains unchanged  
-- **Performance optimized**: Reuses cached images and search results
-- **Scalable design**: Handles large decklists with efficient pagination
-- **User-centric**: Intuitive entry-based grouping matches user mental model
+### Single-Source-of-Truth for Face Mode Resolution
+**Problem Solved**: Potential inconsistency between grid preview and PDF generation for double-faced cards
 
-## Recent Architecture Improvements (2025-08-08)
+**Solution**: Face preferences are fully resolved during `parse_and_resolve_decklist()` and stored in `DecklistEntry.face_mode`. Both grid preview and PDF generation use the same resolved face modes, ensuring identical results.
 
-### Single-Source-of-Truth Implementation ✅
-Successfully resolved potential inconsistency between grid preview and PDF generation through architectural changes:
+**Key Changes**:
+- `DecklistEntry` now contains `face_mode: DoubleFaceMode` (fully resolved)
+- `parse_and_resolve_decklist()` accepts global face mode parameter
+- Shared `get_image_urls_for_face_mode()` helper ensures consistency
 
-#### Key Changes Made:
-1. **Evolved `DecklistEntry` Structure**: Replaced `preferred_face: Option<NameMatchMode>` with `face_mode: DoubleFaceMode` for fully resolved face preferences
-2. **Updated Core API**: `parse_and_resolve_decklist()` now accepts global face mode parameter and resolves preferences at parse time
-3. **Shared Helper Function**: Created `get_image_urls_for_face_mode()` for consistent face mode logic between components
-4. **Grid Preview Accuracy**: Updated grid generation to use same logic as PDF generation, ensuring identical results
-
-#### Benefits Achieved:
-- **Consistency Guarantee**: Grid preview and PDF generation now show identical results
-- **No Timing Issues**: Face preferences resolved once during parsing, immune to subsequent global setting changes  
-- **Clean Architecture**: Single implementation of face mode logic eliminates code duplication
-- **Risk Mitigation**: PDF generation logic preserved unchanged to avoid regressions
-- **Comprehensive Testing**: All face mode combinations verified with unit tests
-
-#### Compatibility:
-- **Breaking Change**: `parse_and_resolve_decklist()` signature updated to require global face mode parameter
-- **Migration**: GUI updated to pass current face mode setting during parsing
-- **Backwards Compatibility**: All other APIs remain unchanged
-
-### Future Enhancements
-
-- **Background Loader Synchronization**: Currently, the background loader caches images for the original printings selected during decklist parsing, but doesn't update when users select different printings in the grid preview. This creates inefficiency where the wrong images are cached while the newly selected printings may need to be fetched later. Solution would involve either canceling and restarting the background loader with updated selections, or implementing a shared state system where both grid preview and background loader reference the same resolved cards.
-- **Drag & drop reordering**: Allow users to rearrange card positions within pages
-- **Print filtering**: Filter available printings by date, legality, or price
-- **Bulk operations**: Select printings for multiple entries at once
-- **Export preferences**: Save and reuse print selection preferences
-- **Preview export**: Save preview grids as images for sharing
-
-## Recent UI/UX Improvements (2025-08-10)
-
-### Interface Consistency and Layout ✅
-Successfully improved the user interface with consistent styling and better information organization:
-
-#### Key UI Changes Made:
-1. **Unified Font Sizing**: Added `UI_FONT_SIZE` constant (14pt) applied across all button text and labels
-2. **Button Layout Consistency**: All action buttons use consistent width and typography
-3. **Expandable Advanced Options Sidebar**: 
-   - Toggleable sidebar (480px wide, controlled by `ADVANCED_SIDEBAR_WIDTH` constant)
-   - Appears adjacent to main content (no "desert" of empty space)  
-   - Toggle button clearly labeled "Advanced Options"
-   - Contains visually separated sections for different functionality
-4. **Clear Information Architecture**: Moved less frequently needed information to collapsible sidebar
-5. **Status Display Repositioning**: Moved status messages below button row for better visual flow
-
-#### Advanced Options Sidebar Design:
-- **Card Name Database Section**: Light green background, contains update button and cache statistics
-- **Image Cache Section**: Light blue background, shows cache size and image count  
-- **Visual Separation**: Each section has distinct styling with subtle borders and tinted backgrounds
-- **Consistent Typography**: Section headers at 16pt, details with bullet points at 12pt
-- **Compact Layout**: Sidebar positioned directly next to main content, avoiding wasted screen space
-
-#### New Constants Added:
-```rust
-const UI_FONT_SIZE: u16 = 14;                    // Consistent font sizing
-const ADVANCED_SIDEBAR_WIDTH: f32 = 480.0;      // Sidebar width management
-```
-
-#### New Message Types:
-```rust
-pub enum Message {
-    // ... existing messages ...
-    ToggleExtendedPanel,  // Show/hide advanced options sidebar
-}
-```
-
-#### AppState Extensions:
-```rust
-pub struct AppState {
-    // ... existing fields ...
-    show_extended_panel: bool,  // Track sidebar visibility state
-}
-```
-
-#### Benefits Achieved:
-- **Professional Interface**: Consistent typography and spacing throughout the application
-- **Better Information Hierarchy**: Advanced options hidden by default but easily accessible
-- **Improved Usability**: Clear button labels and logical grouping of functionality  
-- **Maintainable Design**: Global constants make UI tweaking simple and consistent
-- **Space Efficiency**: Sidebar appears adjacent to content rather than creating empty screen areas
+### Known Limitations
+- **Background Loader Synchronization**: Background image loader doesn't update when users select different printings in grid preview
+- **Cache Persistence Test**: Disabled due to file system dependencies in unit tests
