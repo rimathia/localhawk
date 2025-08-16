@@ -49,6 +49,18 @@ cd LocalHawkiOS && open LocalHawkiOS.xcodeproj  # Open in Xcode
 - **Cache Management**: Real-time statistics, clear image cache, update card names database
 - **Mobile-Optimized UI**: Expandable path display, color-coded cache cards, smooth animations
 
+### iOS Threading Architecture
+- **Current Approach**: Single-threaded tokio runtime + attempted single-threaded image processing
+- **Tokio Runtime**: Uses `new_current_thread()` to inherit caller's QoS and avoid priority inversion
+- **Image Processing**: Disabled `jpeg_rayon` feature, but JPEG decoder still has built-in worker threads
+- **Known Issue**: JPEG decoder creates worker threads that cause QoS priority inversion warnings
+- **Impact**: Functional but generates Thread Performance Checker warnings in Xcode
+- **Workarounds**: 
+  - Accept the warnings (functionality works correctly)
+  - Use alternative image processing library
+  - Convert JPEGs to PNG server-side
+- **Future Solutions**: Replace jpeg-decoder with single-threaded alternative or implement QoS inheritance
+
 ## Key Dependencies
 
 - **iced** - Cross-platform GUI framework (Elm-inspired architecture)

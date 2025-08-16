@@ -2444,7 +2444,9 @@ name = "localhawk-core"
 version = "0.1.0"
 dependencies = [
  "directories",
+ "image",
  "itertools",
+ "jpeg-decoder",
  "lazy_static",
  "libc",
  "log",

@@ -28,7 +28,8 @@
       "Bash(cargo fmt:*)",
       "Bash(xcodebuild:*)",
       "Bash(rustup target:*)",
-      "Bash(./build_ios.sh)"
+      "Bash(./build_ios.sh)",
+      "Bash(cargo tree:*)"
     ],
     "deny": []
   }
