@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Magic Card Proxy Sheet Generator - A cross-platform application that creates PDF proxy sheets for Magic: The Gathering cards. Available as both a desktop GUI (Rust/iced) and native iOS app (SwiftUI + Rust core). Users specify a list of cards and the application generates a printable PDF with card images arranged in a grid layout.
+LocalHawk Card Sheet Generator - A cross-platform application that creates PDF card sheets for trading cards. Available as both a desktop GUI (Rust/iced) and native iOS app (SwiftUI + Rust core). Users specify a list of cards and the application generates a printable PDF with card images arranged in a grid layout.
 
 ### Key Features
 - **Cross-Platform Support**: Desktop GUI (Rust/iced) and native iOS app (SwiftUI) sharing the same Rust core
@@ -21,27 +21,27 @@ Magic Card Proxy Sheet Generator - A cross-platform application that creates PDF
 
 ### Architecture
 - **SwiftUI for UI** + **Rust core via FFI** for 100% code reuse of PDF generation logic
-- **Memory Management**: Rust allocates with `malloc`, Swift frees with dedicated `proxy_free_buffer()` 
+- **Memory Management**: Rust allocates with `malloc`, Swift frees with dedicated `localhawk_free_buffer()` 
 - **Error Handling**: C-style error codes with descriptive message functions
 - **Native iOS Integration**: Share sheet, AirPrint, Files app, background cache persistence
 
-### Key FFI Functions (`magic-proxy-core/src/ffi.rs`)
-- `proxy_initialize()` - Initialize caches (required first call)
-- `proxy_generate_pdf_from_decklist()` - Main PDF generation
-- `proxy_free_buffer()` - Memory cleanup
-- `proxy_get_*_cache_stats()` - Cache statistics for Advanced Options
-- `proxy_clear_image_cache()` / `proxy_update_card_names()` - Cache management
+### Key FFI Functions (`localhawk-core/src/ffi.rs`)
+- `localhawk_initialize()` - Initialize caches (required first call)
+- `localhawk_generate_pdf_from_decklist()` - Main PDF generation
+- `localhawk_free_buffer()` - Memory cleanup
+- `localhawk_get_*_cache_stats()` - Cache statistics for Advanced Options
+- `localhawk_clear_image_cache()` / `localhawk_update_card_names()` - Cache management
 
 ### Build System
 ```bash
 ./build_ios.sh                                    # Build iOS static libraries
-cd MagicProxyiOS && open MagicProxyiOS.xcodeproj  # Open in Xcode
+cd LocalHawkiOS && open LocalHawkiOS.xcodeproj  # Open in Xcode
 ```
 
 **Build Artifacts**:
-- `ios-libs/libmagic_proxy_core_device.a` - Physical iOS devices
-- `ios-libs/libmagic_proxy_core_sim.a` - Universal simulator library
-- `ios-libs/magic_proxy.h` - C header for Swift bridging
+- `ios-libs/liblocalhawk_core_device.a` - Physical iOS devices
+- `ios-libs/liblocalhawk_core_sim.a` - Universal simulator library
+- `ios-libs/localhawk.h` - C header for Swift bridging
 
 ### iOS App Features
 - **Main Interface**: Text editor for decklist input with native share sheet integration
@@ -63,17 +63,17 @@ cd MagicProxyiOS && open MagicProxyiOS.xcodeproj  # Open in Xcode
 
 ### Build and Run (Desktop)
 - `cargo build` - Compile the project
-- `cargo run -p magic-proxy-gui` - Build and run the GUI application
-- `cargo run -p magic-proxy-cli` - Build and run the CLI application
+- `cargo run -p localhawk-gui` - Build and run the GUI application
+- `cargo run -p localhawk-cli` - Build and run the CLI application
 - `cargo check` - Check for compilation errors without building
 
 ### Build and Run (iOS)
 - `./build_ios.sh` - Build iOS static libraries for device and simulator
-- `cd MagicProxyiOS && xcodebuild -project MagicProxyiOS.xcodeproj -scheme MagicProxyiOS -destination 'platform=iOS Simulator,name=iPad Air 11-inch (M3)' build` - Build iOS app
-- `xcrun simctl install "iPad Air 11-inch (M3)" "./path/to/MagicProxyiOS.app"` - Install on simulator
-- `xcrun simctl launch "iPad Air 11-inch (M3)" com.magicproxy.MagicProxyiOS` - Launch iOS app
+- `cd LocalHawkiOS && xcodebuild -project LocalHawkiOS.xcodeproj -scheme LocalHawkiOS -destination 'platform=iOS Simulator,name=iPad Air 11-inch (M3)' build` - Build iOS app
+- `xcrun simctl install "iPad Air 11-inch (M3)" "./path/to/LocalHawkiOS.app"` - Install on simulator
+- `xcrun simctl launch "iPad Air 11-inch (M3)" com.localhawk.LocalHawkiOS` - Launch iOS app
 - `open -a Simulator` - Open iOS Simulator for manual testing
-- `cd MagicProxyiOS && open MagicProxyiOS.xcodeproj` - Open in Xcode for development
+- `cd LocalHawkiOS && open LocalHawkiOS.xcodeproj` - Open in Xcode for development
 
 ### Testing and Quality
 - `cargo test` - Run all tests
@@ -271,7 +271,7 @@ The application uses a sophisticated multi-layered caching system optimized for 
 
 #### 1. Image Cache (`ImageCache`)
 - **Purpose**: Stores downloaded card images to avoid repeated network requests
-- **Location**: `~/.cache/magic-proxy/` (platform-specific cache directory)
+- **Location**: `~/.cache/localhawk/` (platform-specific cache directory)
 - **Format**: Raw JPEG/PNG bytes with SHA256-hashed filenames + JSON metadata
 - **Storage Strategy**: Stores raw bytes as downloaded from Scryfall, converts to `DynamicImage` on-demand for PDF generation
 - **GUI Access**: `get_cached_image_bytes()` provides raw bytes for direct use with `iced::widget::Image`
@@ -285,7 +285,7 @@ The application uses a sophisticated multi-layered caching system optimized for 
 
 #### 2. Search Results Cache (`SearchResultsCache`)
 - **Purpose**: Cache Scryfall API search responses to reduce API calls
-- **Location**: `~/.cache/magic-proxy/search_results.json`
+- **Location**: `~/.cache/localhawk/search_results.json`
 - **Validity**: Permanent (search results don't change for card names)
 - **Access Tracking**: Updates `last_accessed` timestamp for each cached search
 - **Persistence Strategy**:
@@ -295,7 +295,7 @@ The application uses a sophisticated multi-layered caching system optimized for 
 
 #### 3. Card Names Cache (`CardNameCache`)
 - **Purpose**: Stores complete Scryfall card names catalog for fuzzy matching
-- **Location**: `~/.cache/magic-proxy/card_names.json`
+- **Location**: `~/.cache/localhawk/card_names.json`
 - **Validity**: 1 day (`CACHE_DURATION_DAYS = 1`)
 - **Data**: ~32,000+ card names with timestamp
 - **Persistence Strategy**:
@@ -306,7 +306,7 @@ The application uses a sophisticated multi-layered caching system optimized for 
 
 #### 4. Set Codes Cache (`SetCodesCache`)
 - **Purpose**: Stores all Magic set codes for decklist parsing
-- **Location**: `~/.cache/magic-proxy/set_codes.json`
+- **Location**: `~/.cache/localhawk/set_codes.json`
 - **Validity**: 1 day (`CACHE_DURATION_DAYS = 1`) - matches card names for consistency
 - **Data**: ~1,000 set codes (e.g., "lea", "leb", "2ed", etc.)
 - **Persistence Strategy**: Same as Card Names Cache
@@ -356,7 +356,7 @@ static SET_CODES_CACHE: OnceLock<Arc<RwLock<Option<HashSet<String>>>>> = OnceLoc
 
 This is a Rust workspace with multiple crates:
 
-### Core Library (`magic-proxy-core/`)
+### Core Library (`localhawk-core/`)
 - `src/lib.rs` - Main ProxyGenerator API and public interface
 - `src/scryfall/` - Scryfall API integration
   - `client.rs` - HTTP client with rate limiting
@@ -372,7 +372,7 @@ This is a Rust workspace with multiple crates:
 - `src/globals.rs` - Global cache management and initialization
 - `src/error.rs` - Error types and conversions
 
-### GUI Application (`magic-proxy-gui/`)
+### GUI Application (`localhawk-gui/`)
 - `src/main.rs` - Application entry point with cache initialization
 - `src/app.rs` - Complete Iced application with:
   - **Grid Preview System**: 3x3 preview grids showing actual card images when cached
@@ -383,7 +383,7 @@ This is a Rust workspace with multiple crates:
   - **Double-Faced Card Support**: Intelligent face detection and mode selection
   - **Expandable Advanced Options Sidebar**: Toggleable sidebar with card name database and image cache management
 
-### CLI Example (`magic-proxy-cli/`)
+### CLI Example (`localhawk-cli/`)
 - `src/main.rs` - Command-line interface demonstrating core functionality
 
 ## Usage Examples
@@ -391,15 +391,15 @@ This is a Rust workspace with multiple crates:
 ### CLI Tool
 ```bash
 # Search for cards
-cargo run -p magic-proxy-cli -- search "Lightning Bolt"
+cargo run -p localhawk-cli -- search "Lightning Bolt"
 
 # Generate PDF (when implemented)
-cargo run -p magic-proxy-cli -- generate --cards="Lightning Bolt,Counterspell" --output=proxies.pdf
+cargo run -p localhawk-cli -- generate --cards="Lightning Bolt,Counterspell" --output=proxies.pdf
 ```
 
 ### Core Library API
 ```rust
-use magic_proxy_core::{ProxyGenerator, PdfOptions, DoubleFaceMode, initialize_caches, shutdown_caches};
+use localhawk_core::{ProxyGenerator, PdfOptions, DoubleFaceMode, initialize_caches, shutdown_caches};
 
 // Initialize caches at startup (required)
 initialize_caches().await?;

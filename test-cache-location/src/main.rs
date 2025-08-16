@@ -2,9 +2,9 @@ use directories::ProjectDirs;
 use std::fs;
 
 fn main() {
-    println!("Testing cache directory locations for magic-proxy...\n");
+    println!("Testing cache directory locations for localhawk...\n");
     
-    if let Some(proj_dirs) = ProjectDirs::from("", "", "magic-proxy") {
+    if let Some(proj_dirs) = ProjectDirs::from("", "", "localhawk") {
         println!("Cache directory: {}", proj_dirs.cache_dir().display());
         println!("Config directory: {}", proj_dirs.config_dir().display());
         println!("Data directory: {}", proj_dirs.data_dir().display());
@@ -40,7 +40,7 @@ fn main() {
             println!("❌ Cache directory does not exist yet");
         }
         
-        println!("\nTo create the cache, run the magic-proxy-gui and use fuzzy matching.");
+        println!("\nTo create the cache, run the localhawk-gui and use fuzzy matching.");
     } else {
         println!("❌ Could not determine cache directories for this platform");
     }

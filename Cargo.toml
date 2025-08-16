@@ -1,8 +1,8 @@
 [workspace]
 members = [
-    "magic-proxy-core",
-    "magic-proxy-gui",
-    "magic-proxy-cli"
+    "localhawk-core",
+    "localhawk-gui",
+    "localhawk-cli"
 ]
 resolver = "2"
 

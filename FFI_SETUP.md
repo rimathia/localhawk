@@ -1,17 +1,17 @@
-# Magic Proxy iOS FFI Setup
+# LocalHawk iOS FFI Setup
 
 ## Overview
 This document describes the Rust FFI (Foreign Function Interface) layer created for building a native iOS app with SwiftUI.
 
 ## What We've Built
 
-### 1. Rust FFI Layer (`magic-proxy-core/src/ffi.rs`)
+### 1. Rust FFI Layer (`localhawk-core/src/ffi.rs`)
 - **Simple API**: One main function to generate PDF from decklist text
 - **Memory Safe**: Proper C-style memory management with explicit free functions
 - **Error Handling**: Clear error codes and messages
 - **Thread Safe**: Uses tokio runtime for async operations
 
-### 2. C Header File (`magic-proxy-core/include/magic_proxy.h`)
+### 2. C Header File (`localhawk-core/include/localhawk.h`)
 - C-compatible function declarations
 - Error code definitions
 - Documentation for Swift bridging
@@ -76,14 +76,14 @@ if (result == 0) {
 ./build_ios.sh
 ```
 This creates:
-- `ios-libs/libmagic_proxy_core_device.a` (for physical devices)
-- `ios-libs/libmagic_proxy_core_sim.a` (for simulator)
-- `ios-libs/magic_proxy.h` (header file)
+- `ios-libs/liblocalhawk_core_device.a` (for physical devices)
+- `ios-libs/liblocalhawk_core_sim.a` (for simulator)
+- `ios-libs/localhawk.h` (header file)
 
 ### 2. Xcode Project Setup
 1. Create new iOS app project
 2. Add appropriate `.a` file to project
-3. Add `magic_proxy.h` to bridging header
+3. Add `localhawk.h` to bridging header
 4. Import in Swift code
 
 ### 3. Swift Wrapper Example
@@ -119,7 +119,7 @@ class ProxyGenerator {
 
 ### Run Rust FFI tests:
 ```bash
-cargo test -p magic-proxy-core ffi
+cargo test -p localhawk-core ffi
 ```
 
 ### Test C integration (macOS only):

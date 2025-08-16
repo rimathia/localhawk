@@ -3,7 +3,7 @@ debug.log
 
 # iOS build artifacts
 /ios-libs/
-MagicProxyiOS/build/
+LocalHawkiOS/build/
 
 # Xcode user data
 **/*.xcuserstate
