@@ -96,6 +96,7 @@ struct ContentView: View {
                 }
             }
         }
+        .navigationViewStyle(.stack)
         .sheet(isPresented: $showingShareSheet) {
             if let pdfData = pdfData {
                 ShareSheet(items: [pdfData])
