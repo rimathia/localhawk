@@ -4,23 +4,17 @@ use super::search_json_storage::SearchJsonStorage;
 use super::{CacheConfig, LruCache};
 use crate::error::ProxyError;
 use crate::scryfall::CardSearchResult;
-use directories::ProjectDirs;
 use std::path::PathBuf;
 
 const SEARCH_RESULT_SIZE_ESTIMATE: u64 = 50 * 1024; // 50 KB per cached search
 const DEFAULT_MAX_SEARCHES: usize = 1000; // Reasonable limit for search results
-const CACHE_FILENAME: &str = "search_results_cache.json";
 
 /// Search results cache type alias
 pub type LruSearchCache = LruCache<String, CardSearchResult, SearchJsonStorage>;
 
 /// Create a new search results cache with sensible defaults
 pub fn create_search_cache() -> Result<LruSearchCache, ProxyError> {
-    let cache_dir = ProjectDirs::from("", "", "magic-proxy")
-        .map(|proj_dirs| proj_dirs.cache_dir().to_path_buf())
-        .unwrap_or_else(|| std::env::temp_dir().join("magic-proxy-cache"));
-
-    let cache_file = cache_dir.join(CACHE_FILENAME);
+    let cache_file = PathBuf::from(crate::get_search_cache_path());
 
     let storage = SearchJsonStorage::new(cache_file, SEARCH_RESULT_SIZE_ESTIMATE)?;
 

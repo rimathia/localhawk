@@ -86,6 +86,131 @@ const char* proxy_get_error_message(int32_t error_code);
  */
 int32_t proxy_test_connection(void);
 
+/**
+ * Cache statistics structure.
+ */
+typedef struct {
+    uint32_t count;      // Number of items in cache
+    double size_mb;      // Size in megabytes
+} CacheStats;
+
+/**
+ * Get image cache statistics.
+ * 
+ * @return CacheStats structure with current image cache info
+ * 
+ * Memory Management:
+ * - Returns struct by value (no memory allocation)
+ * - No cleanup required
+ */
+CacheStats proxy_get_image_cache_stats(void);
+
+/**
+ * Get search results cache statistics.
+ * 
+ * @return CacheStats structure with current search cache info
+ * 
+ * Memory Management:
+ * - Returns struct by value (no memory allocation)
+ * - No cleanup required
+ */
+CacheStats proxy_get_search_cache_stats(void);
+
+/**
+ * Get card names cache statistics.
+ * 
+ * @return CacheStats structure with current card names cache info
+ *         Returns count=0 if cache is not initialized
+ * 
+ * Memory Management:
+ * - Returns struct by value (no memory allocation)
+ * - No cleanup required
+ */
+CacheStats proxy_get_card_names_cache_stats(void);
+
+/**
+ * Clear the image cache.
+ * 
+ * @return PROXY_SUCCESS on success, negative error code on failure
+ * 
+ * Memory Management:
+ * - No memory is allocated by this function
+ * - No cleanup required
+ */
+int32_t proxy_clear_image_cache(void);
+
+/**
+ * Update card names database from Scryfall API.
+ * This is a blocking operation that may take several seconds.
+ * 
+ * @return PROXY_SUCCESS on success, negative error code on failure
+ * 
+ * Memory Management:
+ * - No memory is allocated by this function
+ * - No cleanup required
+ */
+int32_t proxy_update_card_names(void);
+
+/**
+ * Save all in-memory caches to disk.
+ * This saves image cache and search results cache without shutting down.
+ * 
+ * @return PROXY_SUCCESS on success, negative error code on failure
+ * 
+ * Memory Management:
+ * - No memory is allocated by this function
+ * - No cleanup required
+ */
+int32_t proxy_save_caches(void);
+
+/**
+ * Get the image cache directory path.
+ * 
+ * @return Pointer to null-terminated string containing the path
+ *         Returns NULL on error
+ * 
+ * Memory Management:
+ * - String is allocated by this function
+ * - Caller must call proxy_free_string to free the memory
+ */
+char* proxy_get_image_cache_path(void);
+
+/**
+ * Get the search results cache file path.
+ * 
+ * @return Pointer to null-terminated string containing the path
+ *         Returns NULL on error
+ * 
+ * Memory Management:
+ * - String is allocated by this function
+ * - Caller must call proxy_free_string to free the memory
+ */
+char* proxy_get_search_cache_path(void);
+
+/**
+ * Get the card names cache file path.
+ * 
+ * @return Pointer to null-terminated string containing the path
+ *         Returns NULL on error
+ * 
+ * Memory Management:
+ * - String is allocated by this function
+ * - Caller must call proxy_free_string to free the memory
+ */
+char* proxy_get_card_names_cache_path(void);
+
+/**
+ * Free a string allocated by proxy_get_*_path functions.
+ * 
+ * @param ptr String pointer returned by proxy_get_*_path functions
+ * 
+ * Memory Management:
+ * - This function must be called to free strings from proxy_get_*_path
+ * - Safe to call with NULL pointer (no-op)
+ * - Do not call with pointers not returned by proxy_get_*_path functions
+ */
+void proxy_free_string(char* ptr);
+
 #ifdef __cplusplus
 }
 #endif

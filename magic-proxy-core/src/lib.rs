@@ -59,7 +59,8 @@ pub use globals::{
     get_card_lookup, get_card_name_cache_info, get_card_name_cache_info_ref,
     get_card_names_cache_size, get_image_cache, get_image_cache_info, get_or_fetch_image,
     get_or_fetch_image_bytes, get_or_fetch_search_results, get_scryfall_client,
-    get_search_results_cache_info, get_set_codes_cache, initialize_caches, shutdown_caches,
+    get_search_results_cache_info, get_set_codes_cache, initialize_caches, save_caches, shutdown_caches,
+    get_cache_directory_path, get_image_cache_path, get_search_cache_path, get_card_names_cache_path, get_set_codes_cache_path,
 };
 pub use layout::{GridImage, GridPosition, GridPreview, PageNavigation, PreviewEntry};
 pub use lookup::{CardNameLookup, NameLookupResult, NameMatchMode};

@@ -1,6 +1,5 @@
 use crate::error::ProxyError;
 use crate::scryfall::{ScryfallClient, models::ScryfallSetCodes};
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -22,19 +21,15 @@ pub struct SetCodesCache {
 
 impl SetCodesCache {
     pub fn new() -> Result<Self, ProxyError> {
-        let cache_dir = Self::get_cache_dir()?;
-        fs::create_dir_all(&cache_dir)
-            .map_err(|e| ProxyError::Cache(format!("Failed to create cache directory: {}", e)))?;
-
-        let cache_file_path = cache_dir.join("set_codes.json");
+        let cache_file_path = PathBuf::from(crate::get_set_codes_cache_path());
+        
+        // Ensure the parent directory exists
+        if let Some(parent_dir) = cache_file_path.parent() {
+            fs::create_dir_all(parent_dir)
+                .map_err(|e| ProxyError::Cache(format!("Failed to create cache directory: {}", e)))?;
+        }
 
         Ok(SetCodesCache { cache_file_path })
-    }
-
-    fn get_cache_dir() -> Result<PathBuf, ProxyError> {
-        ProjectDirs::from("", "", "magic-proxy")
-            .map(|proj_dirs| proj_dirs.cache_dir().to_path_buf())
-            .ok_or_else(|| ProxyError::Cache("Could not determine cache directory".to_string()))
     }
 
     pub async fn get_set_codes(

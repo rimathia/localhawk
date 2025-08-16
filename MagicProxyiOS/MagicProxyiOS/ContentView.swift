@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var pdfData: Data?
     @State private var errorMessage: String?
     @State private var showingShareSheet = false
+    @State private var showingAdvancedOptions = false
     
     var body: some View {
         NavigationView {
@@ -84,11 +85,26 @@ struct ContentView: View {
             }
             .padding()
             .navigationTitle("Magic Proxy")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        showingAdvancedOptions = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                }
+            }
         }
         .sheet(isPresented: $showingShareSheet) {
             if let pdfData = pdfData {
                 ShareSheet(items: [pdfData])
             }
+        }
+        .sheet(isPresented: $showingAdvancedOptions) {
+            // TODO: Add AdvancedOptionsView.swift file to Xcode project
+            Text("Advanced Options")
+            AdvancedOptionsView()
         }
     }
     

@@ -3,6 +3,7 @@ use crate::{
     SetCodesCache,
 };
 use crate::cache::{LruImageCache, create_image_cache, LruSearchCache, create_search_cache};
+use directories::ProjectDirs;
 use std::collections::HashSet;
 use std::sync::{Arc, OnceLock, RwLock};
 use tracing::{debug, info};
@@ -74,16 +75,16 @@ pub async fn initialize_caches() -> Result<(), ProxyError> {
     Ok(())
 }
 
-// Shutdown function - save all caches to disk
-pub async fn shutdown_caches() -> Result<(), ProxyError> {
-    info!("Saving all caches to disk before shutdown");
+// Save all in-memory caches to disk (without shutdown)
+pub async fn save_caches() -> Result<(), ProxyError> {
+    info!("Saving all in-memory caches to disk");
 
     // Save image cache metadata
     {
         let image_cache = get_image_cache();
         let cache_guard = image_cache.read().unwrap();
         cache_guard.save_to_storage()?;
-        info!("Image cache metadata saved to disk");
+        debug!("Image cache saved to disk");
     }
 
     // Save search results cache
@@ -91,11 +92,22 @@ pub async fn shutdown_caches() -> Result<(), ProxyError> {
         let search_cache = get_search_results_cache();
         let cache_guard = search_cache.read().unwrap();
         cache_guard.save_to_storage()?;
-        info!("Search results cache saved to disk");
+        debug!("Search results cache saved to disk");
     }
 
     // Card names and set codes caches save immediately when updated from API
-    // (no need to save at shutdown - they only change when force-updated)
+    // (no need to save - they only change when force-updated and save immediately)
+
+    info!("All in-memory caches saved to disk successfully");
+    Ok(())
+}
+
+// Shutdown function - save all caches to disk
+pub async fn shutdown_caches() -> Result<(), ProxyError> {
+    info!("Saving all caches to disk before shutdown");
+
+    // Reuse the save logic
+    save_caches().await?;
 
     info!("All caches saved to disk successfully");
     Ok(())
@@ -359,6 +371,35 @@ pub async fn get_or_fetch_search_results(
     }
 
     Ok(search_results)
+}
+
+/// Get the actual cache directory path
+pub fn get_cache_directory_path() -> String {
+    let cache_dir = ProjectDirs::from("", "", "magic-proxy")
+        .map(|proj_dirs| proj_dirs.cache_dir().to_path_buf())
+        .unwrap_or_else(|| std::env::temp_dir().join("magic-proxy-cache"));
+    
+    cache_dir.to_string_lossy().to_string()
+}
+
+/// Get the image cache directory path
+pub fn get_image_cache_path() -> String {
+    format!("{}/", get_cache_directory_path())
+}
+
+/// Get the search results cache file path
+pub fn get_search_cache_path() -> String {
+    format!("{}/search_results_cache.json", get_cache_directory_path())
+}
+
+/// Get the card names cache file path
+pub fn get_card_names_cache_path() -> String {
+    format!("{}/card_names.json", get_cache_directory_path())
+}
+
+/// Get the set codes cache file path
+pub fn get_set_codes_cache_path() -> String {
+    format!("{}/set_codes.json", get_cache_directory_path())
 }
 
 #[cfg(test)]

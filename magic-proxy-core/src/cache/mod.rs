@@ -77,9 +77,7 @@ impl ImageCache {
         max_size_bytes: u64,
     ) -> Result<Self, ProxyError> {
         let cache_dir = cache_dir.unwrap_or_else(|| {
-            directories::ProjectDirs::from("", "", "magic-proxy")
-                .map(|proj_dirs| proj_dirs.cache_dir().to_path_buf())
-                .unwrap_or_else(|| std::env::temp_dir().join("magic-proxy-cache"))
+            PathBuf::from(crate::get_cache_directory_path())
         });
 
         let metadata_file = cache_dir.join(METADATA_FILENAME);

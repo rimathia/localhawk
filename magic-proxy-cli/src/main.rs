@@ -130,7 +130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let cache_guard = cache.read().unwrap();
                     println!(
                         "Cache size: {} images ({} MB)",
-                        cache_guard.size(),
+                        cache_guard.len(),
                         cache_guard.size_bytes() / (1024 * 1024)
                     );
                 }

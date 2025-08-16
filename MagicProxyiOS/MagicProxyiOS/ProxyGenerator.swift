@@ -1,5 +1,10 @@
 import Foundation
 
+struct CacheStatistics {
+    let count: UInt32
+    let sizeMB: Double
+}
+
 enum ProxyGeneratorError: Error, LocalizedError {
     case initializationFailed
     case nullPointer
@@ -124,5 +129,81 @@ class ProxyGenerator {
         }
         // Note: proxy_get_error_message returns static strings - no need to free
         return String(cString: messagePtr)
+    }
+    
+    // MARK: - Cache Statistics
+    
+    /// Get image cache statistics
+    static func getImageCacheStats() -> CacheStatistics {
+        let stats = proxy_get_image_cache_stats()
+        return CacheStatistics(count: stats.count, sizeMB: stats.size_mb)
+    }
+    
+    /// Get search results cache statistics
+    static func getSearchCacheStats() -> CacheStatistics {
+        let stats = proxy_get_search_cache_stats()
+        return CacheStatistics(count: stats.count, sizeMB: stats.size_mb)
+    }
+    
+    /// Get card names cache statistics
+    static func getCardNamesCacheStats() -> CacheStatistics {
+        let stats = proxy_get_card_names_cache_stats()
+        return CacheStatistics(count: stats.count, sizeMB: stats.size_mb)
+    }
+    
+    /// Clear image cache
+    static func clearImageCache() -> Result<Void, ProxyGeneratorError> {
+        let result = proxy_clear_image_cache()
+        guard result == 0 else {
+            return .failure(convertErrorCode(result))
+        }
+        return .success(())
+    }
+    
+    /// Update card names database from Scryfall API
+    static func updateCardNames() -> Result<Void, ProxyGeneratorError> {
+        let result = proxy_update_card_names()
+        guard result == 0 else {
+            return .failure(convertErrorCode(result))
+        }
+        return .success(())
+    }
+    
+    /// Save all in-memory caches to disk
+    static func saveCaches() -> Result<Void, ProxyGeneratorError> {
+        let result = proxy_save_caches()
+        guard result == 0 else {
+            return .failure(convertErrorCode(result))
+        }
+        return .success(())
+    }
+    
+    // MARK: - Cache Paths
+    
+    /// Get the image cache directory path
+    static func getImageCachePath() -> String? {
+        guard let cString = proxy_get_image_cache_path() else {
+            return nil
+        }
+        defer { proxy_free_string(cString) }
+        return String(cString: cString)
+    }
+    
+    /// Get the search results cache file path
+    static func getSearchCachePath() -> String? {
+        guard let cString = proxy_get_search_cache_path() else {
+            return nil
+        }
+        defer { proxy_free_string(cString) }
+        return String(cString: cString)
+    }
+    
+    /// Get the card names cache file path
+    static func getCardNamesCachePath() -> String? {
+        guard let cString = proxy_get_card_names_cache_path() else {
+            return nil
+        }
+        defer { proxy_free_string(cString) }
+        return String(cString: cString)
     }
 }

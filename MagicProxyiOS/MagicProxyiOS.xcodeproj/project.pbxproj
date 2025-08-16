@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		1E2D65BC2E5060E6006DF585 /* AdvancedOptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E2D65BB2E5060E6006DF585 /* AdvancedOptionsView.swift */; };
 		A1000001 /* MagicProxyiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002 /* MagicProxyiOSApp.swift */; };
 		A1000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004 /* ContentView.swift */; };
 		A1000005 /* ProxyGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000006 /* ProxyGenerator.swift */; };
@@ -16,13 +17,14 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		A1000013 /* MagicProxyiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MagicProxyiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1E2D65BB2E5060E6006DF585 /* AdvancedOptionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedOptionsView.swift; sourceTree = "<group>"; };
 		A1000002 /* MagicProxyiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagicProxyiOSApp.swift; sourceTree = "<group>"; };
 		A1000004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A1000006 /* ProxyGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyGenerator.swift; sourceTree = "<group>"; };
 		A1000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000010 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		A1000012 /* libmagic_proxy_core_sim.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libmagic_proxy_core_sim.a; path = "../ios-libs/libmagic_proxy_core_sim.a"; sourceTree = "<group>"; };
+		A1000013 /* MagicProxyiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MagicProxyiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000014 /* magic_proxy.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = magic_proxy.h; path = "../ios-libs/magic_proxy.h"; sourceTree = "<group>"; };
 		A1000015 /* MagicProxyiOS-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "MagicProxyiOS-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -48,17 +50,10 @@
 			);
 			sourceTree = "<group>";
 		};
-		A1000019 /* Products */ = {
-			isa = PBXGroup;
-			children = (
-				A1000013 /* MagicProxyiOS.app */,
-			);
-			name = Products;
-			sourceTree = "<group>";
-		};
 		A1000018 /* MagicProxyiOS */ = {
 			isa = PBXGroup;
 			children = (
+				1E2D65BB2E5060E6006DF585 /* AdvancedOptionsView.swift */,
 				A1000002 /* MagicProxyiOSApp.swift */,
 				A1000004 /* ContentView.swift */,
 				A1000006 /* ProxyGenerator.swift */,
@@ -69,12 +64,12 @@
 			path = MagicProxyiOS;
 			sourceTree = "<group>";
 		};
-		A1000021 /* Preview Content */ = {
+		A1000019 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A1000010 /* Preview Assets.xcassets */,
+				A1000013 /* MagicProxyiOS.app */,
 			);
-			path = "Preview Content";
+			name = Products;
 			sourceTree = "<group>";
 		};
 		A1000020 /* Frameworks */ = {
@@ -84,6 +79,14 @@
 				A1000014 /* magic_proxy.h */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		A1000021 /* Preview Content */ = {
+			isa = PBXGroup;
+			children = (
+				A1000010 /* Preview Assets.xcassets */,
+			);
+			path = "Preview Content";
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -157,6 +160,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000003 /* ContentView.swift in Sources */,
+				1E2D65BC2E5060E6006DF585 /* AdvancedOptionsView.swift in Sources */,
 				A1000005 /* ProxyGenerator.swift in Sources */,
 				A1000001 /* MagicProxyiOSApp.swift in Sources */,
 			);
@@ -353,20 +357,20 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A1000027 /* Build configuration list for PBXProject "MagicProxyiOS" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A1000028 /* Debug */,
-				A1000029 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		A1000023 /* Build configuration list for PBXNativeTarget "MagicProxyiOS" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				A1000030 /* Debug */,
 				A1000031 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1000027 /* Build configuration list for PBXProject "MagicProxyiOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000028 /* Debug */,
+				A1000029 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -1,7 +1,7 @@
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
 
-use crate::{DoubleFaceMode, PdfOptions, ProxyGenerator, initialize_caches};
+use crate::{DoubleFaceMode, PdfOptions, ProxyGenerator, initialize_caches, save_caches, get_image_cache_info, get_search_results_cache_info, get_card_names_cache_size, force_update_card_lookup, get_image_cache_path, get_search_cache_path, get_card_names_cache_path};
 
 /// Error codes for FFI functions
 #[repr(C)]
@@ -162,6 +162,131 @@ pub extern "C" fn proxy_get_error_message(error_code: c_int) -> *const c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn proxy_test_connection() -> c_int {
     42 // Magic number to verify the call works
+}
+
+/// Cache statistics structure for FFI
+#[repr(C)]
+pub struct CacheStats {
+    pub count: u32,
+    pub size_mb: f64,
+}
+
+/// Get image cache statistics
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_get_image_cache_stats() -> CacheStats {
+    let (count, size_mb) = get_image_cache_info();
+    CacheStats {
+        count: count as u32,
+        size_mb,
+    }
+}
+
+/// Get search results cache statistics
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_get_search_cache_stats() -> CacheStats {
+    let (count, size_mb) = get_search_results_cache_info();
+    CacheStats {
+        count: count as u32,
+        size_mb,
+    }
+}
+
+/// Get card names cache statistics
+/// Returns count = 0 if cache is not initialized
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_get_card_names_cache_stats() -> CacheStats {
+    if let Some((count, size_mb)) = get_card_names_cache_size() {
+        CacheStats {
+            count: count as u32,
+            size_mb,
+        }
+    } else {
+        CacheStats {
+            count: 0,
+            size_mb: 0.0,
+        }
+    }
+}
+
+/// Clear image cache
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_clear_image_cache() -> c_int {
+    match ProxyGenerator::clear_cache() {
+        Ok(_) => FFIError::Success as c_int,
+        Err(_) => FFIError::InitializationFailed as c_int,
+    }
+}
+
+/// Update card names database from Scryfall API
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_update_card_names() -> c_int {
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(_) => return FFIError::InitializationFailed as c_int,
+    };
+
+    match rt.block_on(force_update_card_lookup()) {
+        Ok(_) => FFIError::Success as c_int,
+        Err(_) => FFIError::InitializationFailed as c_int,
+    }
+}
+
+/// Save all in-memory caches to disk
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_save_caches() -> c_int {
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(rt) => rt,
+        Err(_) => return FFIError::InitializationFailed as c_int,
+    };
+
+    match rt.block_on(save_caches()) {
+        Ok(_) => FFIError::Success as c_int,
+        Err(_) => FFIError::InitializationFailed as c_int,
+    }
+}
+
+/// Get image cache path
+/// Returns a newly allocated C string that must be freed with proxy_free_string
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_get_image_cache_path() -> *mut c_char {
+    let path = get_image_cache_path();
+    match CString::new(path) {
+        Ok(c_string) => c_string.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Get search cache path
+/// Returns a newly allocated C string that must be freed with proxy_free_string
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_get_search_cache_path() -> *mut c_char {
+    let path = get_search_cache_path();
+    match CString::new(path) {
+        Ok(c_string) => c_string.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Get card names cache path
+/// Returns a newly allocated C string that must be freed with proxy_free_string
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_get_card_names_cache_path() -> *mut c_char {
+    let path = get_card_names_cache_path();
+    match CString::new(path) {
+        Ok(c_string) => c_string.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+/// Free a string allocated by proxy_get_*_path functions
+#[unsafe(no_mangle)]
+pub extern "C" fn proxy_free_string(ptr: *mut c_char) {
+    if !ptr.is_null() {
+        unsafe {
+            let _ = CString::from_raw(ptr);
+            // CString will be dropped and memory freed automatically
+        }
+    }
 }
 
 #[cfg(test)]

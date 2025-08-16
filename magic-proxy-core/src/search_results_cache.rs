@@ -1,14 +1,11 @@
 use crate::error::ProxyError;
 use crate::scryfall::{CardSearchResult, ScryfallClient};
-use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use time::OffsetDateTime;
 use tracing::{debug, info};
-
-const CACHE_FILENAME: &str = "search_results_cache.json";
 
 #[derive(Serialize, Deserialize, Debug)]
 struct SearchResultsCacheData {
@@ -32,12 +29,15 @@ pub struct SearchResultsCache {
 
 impl SearchResultsCache {
     pub fn new() -> Result<Self, ProxyError> {
-        let cache_dir = Self::get_cache_dir()?;
-        fs::create_dir_all(&cache_dir).map_err(|e| {
-            ProxyError::Cache(format!("Failed to create search cache directory: {}", e))
-        })?;
+        let cache_file_path = PathBuf::from(crate::get_search_cache_path());
+        
+        // Ensure the parent directory exists
+        if let Some(parent_dir) = cache_file_path.parent() {
+            fs::create_dir_all(parent_dir).map_err(|e| {
+                ProxyError::Cache(format!("Failed to create search cache directory: {}", e))
+            })?;
+        }
 
-        let cache_file_path = cache_dir.join(CACHE_FILENAME);
         let mut cache = SearchResultsCache {
             cache_file_path,
             cache: HashMap::new(),
@@ -45,12 +45,6 @@ impl SearchResultsCache {
 
         cache.load_from_disk()?;
         Ok(cache)
-    }
-
-    fn get_cache_dir() -> Result<PathBuf, ProxyError> {
-        ProjectDirs::from("", "", "magic-proxy")
-            .map(|proj_dirs| proj_dirs.cache_dir().to_path_buf())
-            .ok_or_else(|| ProxyError::Cache("Could not determine cache directory".to_string()))
     }
 
     pub async fn get_or_fetch_search_results(
