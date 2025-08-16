@@ -17,9 +17,8 @@ pub mod set_codes_cache;
 pub use background_loading::{
     BackgroundLoadHandle, BackgroundLoadProgress, LoadingPhase, start_background_image_loading,
 };
-pub use cache::ImageCache;
+pub use cache::{LruImageCache, LruSearchCache};
 pub use card_name_cache::CardNameCache;
-pub use search_results_cache::SearchResultsCache;
 pub use set_codes_cache::SetCodesCache;
 
 /// Face mode for double-faced cards - moved from pdf module as it's used throughout the codebase
@@ -437,7 +436,7 @@ impl ProxyGenerator {
     pub fn cache_size() -> usize {
         let cache = get_image_cache();
         let cache_guard = cache.read().unwrap();
-        cache_guard.size()
+        cache_guard.len()
     }
 
     /// Clear the image cache (now uses global cache)
@@ -451,7 +450,7 @@ impl ProxyGenerator {
     pub fn force_evict_image(url: &str) -> Result<(), ProxyError> {
         let cache = get_image_cache();
         let mut cache_guard = cache.write().unwrap();
-        cache_guard.force_evict(url)
+        cache_guard.evict(&url.to_string()).map(|_| ())
     }
 
     /// Get card name cache information (timestamp and count) (now uses global function)
@@ -542,11 +541,11 @@ mod tests {
         ProxyGenerator::clear_cache().unwrap();
 
         // Test cache is now empty
-        assert_eq!(get_image_cache().read().unwrap().size(), 0);
+        assert_eq!(get_image_cache().read().unwrap().len(), 0);
 
         // Test clear cache (should not panic on empty cache)
         ProxyGenerator::clear_cache().unwrap();
-        assert_eq!(get_image_cache().read().unwrap().size(), 0);
+        assert_eq!(get_image_cache().read().unwrap().len(), 0);
     }
 
     #[tokio::test]
@@ -611,7 +610,7 @@ mod tests {
         // Test that default creation works
         let generator = ProxyGenerator::default();
         assert_eq!(generator.get_cards().len(), 0);
-        assert_eq!(get_image_cache().read().unwrap().size(), 0);
+        assert_eq!(get_image_cache().read().unwrap().len(), 0);
     }
 
     #[test]

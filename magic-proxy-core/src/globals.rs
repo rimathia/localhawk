@@ -1,14 +1,13 @@
 use crate::{
-    CardNameCache, CardNameLookup, ImageCache, NameLookupResult, ProxyError, ScryfallClient,
-    SearchResultsCache, SetCodesCache,
+    CardNameCache, CardNameLookup, NameLookupResult, ProxyError, ScryfallClient,
+    SetCodesCache,
 };
+use crate::cache::{LruImageCache, create_image_cache, LruSearchCache, create_search_cache};
 use std::collections::HashSet;
 use std::sync::{Arc, OnceLock, RwLock};
 use tracing::{debug, info};
 
 // Memory size estimation constants for cache statistics
-// Search Results Cache: avg 30 cards × (5 strings × 50 bytes + overhead) ≈ 10KB per card + JSON overhead
-const SEARCH_RESULT_SIZE_ESTIMATE: u64 = 50 * 1024; // 50 KB per cached search
 
 // Card Names Cache: per-name estimate (avg 20 bytes) + fuzzy index overhead factor (4x for trie structure)
 const CARD_NAME_SIZE_ESTIMATE: u64 = 20; // 20 bytes per card name
@@ -16,9 +15,9 @@ const FUZZY_INDEX_OVERHEAD_FACTOR: u64 = 4; // Fuzzy index adds 4x overhead for 
 
 // Global singletons - initialized once, shared everywhere
 static SCRYFALL_CLIENT: OnceLock<ScryfallClient> = OnceLock::new();
-static IMAGE_CACHE: OnceLock<Arc<RwLock<ImageCache>>> = OnceLock::new();
+static IMAGE_CACHE: OnceLock<Arc<RwLock<LruImageCache>>> = OnceLock::new();
 static CARD_LOOKUP: OnceLock<Arc<RwLock<Option<CardNameLookup>>>> = OnceLock::new();
-static SEARCH_RESULTS_CACHE: OnceLock<Arc<RwLock<SearchResultsCache>>> = OnceLock::new();
+static SEARCH_RESULTS_CACHE: OnceLock<Arc<RwLock<LruSearchCache>>> = OnceLock::new();
 static SET_CODES_CACHE: OnceLock<Arc<RwLock<Option<HashSet<String>>>>> = OnceLock::new();
 static CARD_NAME_CACHE_INFO: OnceLock<Arc<RwLock<Option<(time::OffsetDateTime, usize)>>>> =
     OnceLock::new();
@@ -27,10 +26,10 @@ pub fn get_scryfall_client() -> &'static ScryfallClient {
     SCRYFALL_CLIENT.get_or_init(|| ScryfallClient::new().expect("Failed to create ScryfallClient"))
 }
 
-pub fn get_image_cache() -> &'static Arc<RwLock<ImageCache>> {
+pub fn get_image_cache() -> &'static Arc<RwLock<LruImageCache>> {
     IMAGE_CACHE.get_or_init(|| {
         Arc::new(RwLock::new(
-            ImageCache::new().expect("Failed to initialize image cache"),
+            create_image_cache().expect("Failed to initialize LRU image cache"),
         ))
     })
 }
@@ -39,10 +38,10 @@ pub fn get_card_lookup() -> &'static Arc<RwLock<Option<CardNameLookup>>> {
     CARD_LOOKUP.get_or_init(|| Arc::new(RwLock::new(None)))
 }
 
-pub fn get_search_results_cache() -> &'static Arc<RwLock<SearchResultsCache>> {
+pub fn get_search_results_cache() -> &'static Arc<RwLock<LruSearchCache>> {
     SEARCH_RESULTS_CACHE.get_or_init(|| {
         Arc::new(RwLock::new(
-            SearchResultsCache::new().expect("Failed to initialize search results cache"),
+            create_search_cache().expect("Failed to initialize LRU search results cache"),
         ))
     })
 }
@@ -83,7 +82,7 @@ pub async fn shutdown_caches() -> Result<(), ProxyError> {
     {
         let image_cache = get_image_cache();
         let cache_guard = image_cache.read().unwrap();
-        cache_guard.save_to_disk()?;
+        cache_guard.save_to_storage()?;
         info!("Image cache metadata saved to disk");
     }
 
@@ -91,7 +90,7 @@ pub async fn shutdown_caches() -> Result<(), ProxyError> {
     {
         let search_cache = get_search_results_cache();
         let cache_guard = search_cache.read().unwrap();
-        cache_guard.save_to_disk()?;
+        cache_guard.save_to_storage()?;
         info!("Search results cache saved to disk");
     }
 
@@ -254,7 +253,7 @@ pub async fn get_or_fetch_image_bytes(url: &str) -> Result<Vec<u8>, ProxyError> 
     // Try to get from cache first (note: this needs mutable access for LRU tracking)
     let cached_bytes = {
         let mut cache_guard = cache.write().unwrap();
-        cache_guard.get(url)
+        cache_guard.get(&url.to_string())
     };
 
     match cached_bytes {
@@ -306,7 +305,7 @@ pub fn get_card_names_cache_size() -> Option<(usize, f64)> {
 pub fn get_image_cache_info() -> (usize, f64) {
     let cache = get_image_cache();
     let cache_guard = cache.read().unwrap();
-    let count = cache_guard.size();
+    let count = cache_guard.len();
     let size_mb = cache_guard.size_bytes() as f64 / (1024.0 * 1024.0);
     (count, size_mb)
 }
@@ -315,15 +314,15 @@ pub fn get_image_cache_info() -> (usize, f64) {
 pub fn get_cached_image_bytes(url: &str) -> Option<Vec<u8>> {
     let cache = get_image_cache();
     let mut cache_guard = cache.write().unwrap();
-    cache_guard.get(url)
+    cache_guard.get(&url.to_string())
 }
 
 /// Get search results cache statistics (count and estimated size in MB)
 pub fn get_search_results_cache_info() -> (usize, f64) {
     let cache = get_search_results_cache();
     let cache_guard = cache.read().unwrap();
-    let count = cache_guard.cache.len();
-    let size_mb = (count as u64 * SEARCH_RESULT_SIZE_ESTIMATE) as f64 / (1024.0 * 1024.0);
+    let count = cache_guard.len();
+    let size_mb = cache_guard.size_bytes() as f64 / (1024.0 * 1024.0);
     (count, size_mb)
 }
 
@@ -336,16 +335,11 @@ pub async fn get_or_fetch_search_results(
     // Check cache first (separate scope to release lock)
     let cached_result = {
         let mut cache_guard = cache.write().unwrap();
-        if let Some(cached) = cache_guard.cache.get_mut(&card_name.to_lowercase()) {
-            cached.last_accessed = time::OffsetDateTime::now_utc();
-            debug!(card_name = %card_name, "Search results cache HIT");
-            Some(cached.search_results.clone())
-        } else {
-            None
-        }
+        cache_guard.get(&card_name.to_lowercase())
     };
 
     if let Some(result) = cached_result {
+        debug!(card_name = %card_name, "Search results cache HIT");
         return Ok(result);
     }
 
@@ -356,22 +350,11 @@ pub async fn get_or_fetch_search_results(
     // Insert into cache (separate scope to release lock)
     {
         let mut cache_guard = cache.write().unwrap();
-        let cached_result = crate::search_results_cache::CachedSearchResult {
-            card_name: card_name.to_lowercase(),
-            search_results: search_results.clone(),
-            cached_at: time::OffsetDateTime::now_utc(),
-            last_accessed: time::OffsetDateTime::now_utc(),
-        };
-
-        cache_guard
-            .cache
-            .insert(card_name.to_lowercase(), cached_result);
-        // Cache will be saved to disk at shutdown
-
+        cache_guard.insert(card_name.to_lowercase(), search_results.clone())?;
         debug!(
             card_name = %card_name,
             results_count = search_results.cards.len(),
-            "Search results cached to disk"
+            "Search results cached"
         );
     }
 
@@ -392,6 +375,6 @@ mod tests {
         let cache = get_image_cache();
         let cache_guard = cache.read().unwrap();
         // Should not panic when accessing cache methods
-        let _size = cache_guard.size();
+        let _size = cache_guard.len();
     }
 }
