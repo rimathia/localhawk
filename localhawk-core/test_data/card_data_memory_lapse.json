@@ -1,0 +1,117 @@
+[
+	{
+		"artist": "Kristina Collantes",
+		"artist_ids": [
+			"73fa8a53-d63a-49b6-ab59-41c88f397f56"
+		],
+		"booster": false,
+		"border_color": "borderless",
+		"card_faces": [
+			{
+				"artist": "Kristina Collantes",
+				"artist_id": "73fa8a53-d63a-49b6-ab59-41c88f397f56",
+				"colors": [],
+				"illustration_id": "f6cbdb3d-d827-44e9-83f4-fb1f1fb0198f",
+				"mana_cost": "",
+				"name": "Memory Lapse",
+				"object": "card_face",
+				"oracle_text": "",
+				"type_line": "Card"
+			},
+			{
+				"artist": "Kristina Collantes",
+				"artist_id": "73fa8a53-d63a-49b6-ab59-41c88f397f56",
+				"colors": [],
+				"flavor_name": "",
+				"mana_cost": "",
+				"name": "Memory Lapse",
+				"object": "card_face",
+				"oracle_text": "",
+				"type_line": "Card"
+			}
+		],
+		"cmc": 0.0,
+		"collector_number": "66s",
+		"color_identity": [],
+		"digital": false,
+		"finishes": [
+			"nonfoil",
+			"foil"
+		],
+		"foil": true,
+		"frame": "2015",
+		"full_art": false,
+		"games": [
+			"paper"
+		],
+		"highres_image": false,
+		"id": "0131ba2a-9cea-4c4b-b15e-5f527be565e3",
+		"image_status": "missing",
+		"keywords": [],
+		"lang": "en",
+		"layout": "art_series",
+		"legalities": {
+			"alchemy": "not_legal",
+			"brawl": "not_legal",
+			"commander": "not_legal",
+			"duel": "not_legal",
+			"explorer": "not_legal",
+			"future": "not_legal",
+			"gladiator": "not_legal",
+			"historic": "not_legal",
+			"historicbrawl": "not_legal",
+			"legacy": "not_legal",
+			"modern": "not_legal",
+			"oldschool": "not_legal",
+			"pauper": "not_legal",
+			"paupercommander": "not_legal",
+			"penny": "not_legal",
+			"pioneer": "not_legal",
+			"premodern": "not_legal",
+			"standard": "not_legal",
+			"vintage": "not_legal"
+		},
+		"multiverse_ids": [],
+		"name": "Memory Lapse // Memory Lapse",
+		"nonfoil": true,
+		"object": "card",
+		"oracle_id": "ff2580fa-5f8d-4c06-9930-84c66f4a09f0",
+		"oversized": false,
+		"prices": {
+			"eur": null,
+			"eur_foil": null,
+			"tix": null,
+			"usd": null,
+			"usd_etched": null,
+			"usd_foil": null
+		},
+		"prints_search_uri": "https://api.scryfall.com/cards/search?order=released&q=oracleid%3Aff2580fa-5f8d-4c06-9930-84c66f4a09f0&unique=prints",
+		"promo": false,
+		"promo_types": [
+			"stamped"
+		],
+		"rarity": "common",
+		"related_uris": {
+			"edhrec": "https://edhrec.com/route/?cc=Memory+Lapse",
+			"tcgplayer_infinite_articles": "https://infinite.tcgplayer.com/search?contentMode=article&game=magic&partner=scryfall&q=Memory+Lapse+%2F%2F+Memory+Lapse&utm_campaign=affiliate&utm_medium=api&utm_source=scryfall",
+			"tcgplayer_infinite_decks": "https://infinite.tcgplayer.com/search?contentMode=deck&game=magic&partner=scryfall&q=Memory+Lapse+%2F%2F+Memory+Lapse&utm_campaign=affiliate&utm_medium=api&utm_source=scryfall"
+		},
+		"released_at": "2021-04-23",
+		"reprint": false,
+		"reserved": false,
+		"rulings_uri": "https://api.scryfall.com/cards/0131ba2a-9cea-4c4b-b15e-5f527be565e3/rulings",
+		"scryfall_set_uri": "https://scryfall.com/sets/astx?utm_source=api",
+		"scryfall_uri": "https://scryfall.com/card/astx/66s/memory-lapse-memory-lapse?utm_source=api",
+		"set": "astx",
+		"set_id": "fbd78c96-cc9d-451e-afb1-2e0022235aa0",
+		"set_name": "Strixhaven Art Series",
+		"set_search_uri": "https://api.scryfall.com/cards/search?order=set&q=e%3Aastx&unique=prints",
+		"set_type": "memorabilia",
+		"set_uri": "https://api.scryfall.com/sets/fbd78c96-cc9d-451e-afb1-2e0022235aa0",
+		"story_spotlight": false,
+		"textless": false,
+		"type_line": "Card // Card",
+		"uri": "https://api.scryfall.com/cards/0131ba2a-9cea-4c4b-b15e-5f527be565e3",
+		"variation": false
+	}
+]

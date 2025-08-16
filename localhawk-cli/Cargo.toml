@@ -1,0 +1,11 @@
+[package]
+name = "localhawk-cli"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+localhawk-core = { path = "../localhawk-core" }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+log = { workspace = true }
+env_logger = "0.11"
+clap = { version = "4.0", features = ["derive"] }
