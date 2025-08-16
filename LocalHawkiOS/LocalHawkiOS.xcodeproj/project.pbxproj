@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		1E2D65BC2E5060E6006DF585 /* AdvancedOptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E2D65BB2E5060E6006DF585 /* AdvancedOptionsView.swift */; };
+		1EA9C4F92E50F34600D3F8CB /* PrintSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EA9C4F82E50F34600D3F8CB /* PrintSelectionView.swift */; };
 		A1000001 /* LocalHawkiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002 /* LocalHawkiOSApp.swift */; };
 		A1000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004 /* ContentView.swift */; };
 		A1000005 /* ProxyGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000006 /* ProxyGenerator.swift */; };
@@ -18,13 +19,14 @@
 
 /* Begin PBXFileReference section */
 		1E2D65BB2E5060E6006DF585 /* AdvancedOptionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedOptionsView.swift; sourceTree = "<group>"; };
+		1EA9C4F82E50F34600D3F8CB /* PrintSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintSelectionView.swift; sourceTree = "<group>"; };
 		A1000002 /* LocalHawkiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHawkiOSApp.swift; sourceTree = "<group>"; };
 		A1000004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		A1000006 /* ProxyGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProxyGenerator.swift; sourceTree = "<group>"; };
 		A1000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000010 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		A1000012 /* liblocalhawk_core_sim.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = liblocalhawk_core_sim.a; path = "../ios-libs/liblocalhawk_core_sim.a"; sourceTree = "<group>"; };
-		A1000013 /* LocalHawkiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalHawkiOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000013 /* LocalHawkiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = LocalHawkiOS.app; path = LocalHawk.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000014 /* localhawk.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = localhawk.h; path = "../ios-libs/localhawk.h"; sourceTree = "<group>"; };
 		A1000015 /* LocalHawkiOS-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "LocalHawkiOS-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -53,6 +55,7 @@
 		A1000018 /* LocalHawkiOS */ = {
 			isa = PBXGroup;
 			children = (
+				1EA9C4F82E50F34600D3F8CB /* PrintSelectionView.swift */,
 				1E2D65BB2E5060E6006DF585 /* AdvancedOptionsView.swift */,
 				A1000002 /* LocalHawkiOSApp.swift */,
 				A1000004 /* ContentView.swift */,
@@ -161,6 +164,7 @@
 			files = (
 				A1000003 /* ContentView.swift in Sources */,
 				1E2D65BC2E5060E6006DF585 /* AdvancedOptionsView.swift in Sources */,
+				1EA9C4F92E50F34600D3F8CB /* PrintSelectionView.swift in Sources */,
 				A1000005 /* ProxyGenerator.swift in Sources */,
 				A1000001 /* LocalHawkiOSApp.swift in Sources */,
 			);
@@ -313,7 +317,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.localhawk.LocalHawkiOS;
-				PRODUCT_NAME = "LocalHawk";
+				PRODUCT_NAME = LocalHawk;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "LocalHawkiOS/LocalHawkiOS-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
@@ -346,7 +350,7 @@
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.localhawk.LocalHawkiOS;
-				PRODUCT_NAME = "LocalHawk";
+				PRODUCT_NAME = LocalHawk;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_BRIDGING_HEADER = "LocalHawkiOS/LocalHawkiOS-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

@@ -48,6 +48,12 @@ cd LocalHawkiOS && open LocalHawkiOS.xcodeproj  # Open in Xcode
 - **Advanced Options**: Cache statistics display and management (gear icon in navigation)
 - **Cache Management**: Real-time statistics, clear image cache, update card names database
 - **Mobile-Optimized UI**: Expandable path display, color-coded cache cards, smooth animations
+- **Background Loading**: Fire-and-forget automatic image loading using `localhawk_parse_and_start_background_loading()`
+
+### Current iOS Limitations (To Be Addressed)
+- **Grid Preview Images**: Card images don't yet display in the 3x3 preview grid (placeholders shown)
+- **Print Selection**: User cannot yet select different printings (UI framework exists but not functional)
+- **Image Display**: GridCardView needs integration with cached image data from background loading
 
 ### iOS Threading Architecture
 - **Current Approach**: Single-threaded tokio runtime + attempted single-threaded image processing

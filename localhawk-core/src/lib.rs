@@ -348,6 +348,31 @@ impl ProxyGenerator {
         Ok(card_list)
     }
 
+    /// Parse decklist and start background image loading (fire and forget)
+    /// This function parses the decklist, kicks off background loading for all cards,
+    /// and returns immediately. Background loading happens asynchronously.
+    pub async fn parse_and_start_background_loading(
+        decklist_text: &str,
+        global_face_mode: DoubleFaceMode,
+    ) -> Result<Vec<DecklistEntry>, ProxyError> {
+        // First parse the decklist
+        let entries = Self::parse_and_resolve_decklist(decklist_text, global_face_mode).await?;
+        
+        // Start background loading for all entries (fire and forget)
+        if !entries.is_empty() {
+            let entries_clone = entries.clone();
+            let entry_count = entries.len();
+            tokio::spawn(async move {
+                let _handle = start_background_image_loading(entries_clone);
+                // We don't wait for completion - just let it run in the background
+                log::debug!("Background image loading started for {} entries", entry_count);
+            });
+        }
+        
+        // Return parsed entries immediately
+        Ok(entries)
+    }
+
     /// Generate PDF directly from decklist entries (highest level convenience method)
     pub async fn generate_pdf_from_entries<F>(
         entries: &[DecklistEntry],

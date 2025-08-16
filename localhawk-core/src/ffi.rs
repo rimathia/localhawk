@@ -5,7 +5,7 @@ use crate::{
     DoubleFaceMode, PdfOptions, ProxyGenerator, force_update_card_lookup,
     get_card_names_cache_path, get_card_names_cache_size, get_image_cache_info,
     get_image_cache_path, get_search_cache_path, get_search_results_cache_info, initialize_caches,
-    save_caches,
+    save_caches, background_loading::{BackgroundLoadHandle, LoadingPhase},
 };
 
 /// Error codes for FFI functions
@@ -326,6 +326,610 @@ pub extern "C" fn localhawk_free_string(ptr: *mut c_char) {
             let _ = CString::from_raw(ptr);
             // CString will be dropped and memory freed automatically
         }
+    }
+}
+
+// ============================================================================
+// Print Selection & Preview FFI Extensions
+// ============================================================================
+
+/// C-compatible decklist entry structure
+#[repr(C)]
+pub struct CDeclistEntry {
+    pub multiple: i32,
+    pub name: *mut c_char,
+    pub set: *mut c_char,        // NULL if not specified
+    pub language: *mut c_char,   // NULL if not specified  
+    pub face_mode: c_int,        // DoubleFaceMode as int
+    pub source_line_number: i32, // -1 if not specified
+}
+
+/// C-compatible card printing structure
+#[repr(C)]
+pub struct CCardPrinting {
+    pub name: *mut c_char,
+    pub set: *mut c_char,
+    pub language: *mut c_char,
+    pub border_crop: *mut c_char,
+    pub back_side: *mut c_char, // NULL if no back side
+}
+
+/// C-compatible card search result
+#[repr(C)]
+pub struct CCardSearchResult {
+    pub cards: *mut CCardPrinting,
+    pub count: usize,
+}
+
+/// Parse decklist and return resolved entries
+/// Returns an array of CDeclistEntry structures
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_parse_and_resolve_decklist(
+    decklist_cstr: *const c_char,
+    global_face_mode: c_int,
+    output_entries: *mut *mut CDeclistEntry,
+    output_count: *mut usize,
+) -> c_int {
+    if decklist_cstr.is_null() || output_entries.is_null() || output_count.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    let decklist_text = match unsafe { CStr::from_ptr(decklist_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    let face_mode = match global_face_mode {
+        0 => DoubleFaceMode::FrontOnly,
+        1 => DoubleFaceMode::BackOnly,
+        2 => DoubleFaceMode::BothSides,
+        _ => return FFIError::InvalidInput as c_int,
+    };
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build() {
+        Ok(rt) => rt,
+        Err(_) => return FFIError::InitializationFailed as c_int,
+    };
+
+    let entries = match rt.block_on(async {
+        ProxyGenerator::parse_and_resolve_decklist(decklist_text, face_mode).await
+    }) {
+        Ok(entries) => entries,
+        Err(_) => return FFIError::ParseFailed as c_int,
+    };
+
+    // Convert to C structures
+    let mut c_entries = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let name = match CString::new(entry.name) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return FFIError::OutOfMemory as c_int,
+        };
+        let set = entry.set.map(|s| CString::new(s).ok()).flatten().map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut());
+        let language = entry.lang.map(|s| CString::new(s).ok()).flatten().map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut());
+        let face_mode_int = match entry.face_mode {
+            DoubleFaceMode::FrontOnly => 0,
+            DoubleFaceMode::BackOnly => 1,
+            DoubleFaceMode::BothSides => 2,
+        };
+
+        c_entries.push(CDeclistEntry {
+            multiple: entry.multiple,
+            name,
+            set,
+            language,
+            face_mode: face_mode_int,
+            source_line_number: entry.source_line_number.map(|n| n as i32).unwrap_or(-1),
+        });
+    }
+
+    // Allocate array
+    let array_size = c_entries.len() * std::mem::size_of::<CDeclistEntry>();
+    let array_ptr = unsafe { libc::malloc(array_size) as *mut CDeclistEntry };
+    if array_ptr.is_null() {
+        // Clean up allocated strings
+        for entry in c_entries {
+            if !entry.name.is_null() {
+                unsafe { let _ = CString::from_raw(entry.name); }
+            }
+            if !entry.set.is_null() {
+                unsafe { let _ = CString::from_raw(entry.set); }
+            }
+            if !entry.language.is_null() {
+                unsafe { let _ = CString::from_raw(entry.language); }
+            }
+        }
+        return FFIError::OutOfMemory as c_int;
+    }
+
+    // Copy entries to array
+    unsafe {
+        std::ptr::copy_nonoverlapping(c_entries.as_ptr(), array_ptr, c_entries.len());
+        *output_entries = array_ptr;
+        *output_count = c_entries.len();
+    }
+
+    FFIError::Success as c_int
+}
+
+/// Search for all printings of a specific card
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_search_card_printings(
+    card_name_cstr: *const c_char,
+    output_result: *mut *mut CCardSearchResult,
+) -> c_int {
+    if card_name_cstr.is_null() || output_result.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    let card_name = match unsafe { CStr::from_ptr(card_name_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build() {
+        Ok(rt) => rt,
+        Err(_) => return FFIError::InitializationFailed as c_int,
+    };
+
+    let search_result = match rt.block_on(async {
+        ProxyGenerator::search_card(card_name).await
+    }) {
+        Ok(result) => result,
+        Err(_) => return FFIError::ParseFailed as c_int,
+    };
+
+    // Convert cards to C structures
+    let mut c_cards = Vec::with_capacity(search_result.cards.len());
+    for card in search_result.cards {
+        let name = match CString::new(card.name) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return FFIError::OutOfMemory as c_int,
+        };
+        let set = match CString::new(card.set) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return FFIError::OutOfMemory as c_int,
+        };
+        let language = match CString::new(card.language) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return FFIError::OutOfMemory as c_int,
+        };
+        let border_crop = match CString::new(card.border_crop) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return FFIError::OutOfMemory as c_int,
+        };
+        let back_side = match card.back_side {
+            Some(back) => {
+                // Extract image URL from BackSide enum
+                let url = match back {
+                    crate::scryfall::models::BackSide::DfcBack { image_url, .. } => image_url,
+                    crate::scryfall::models::BackSide::ContributesToMeld { meld_result_image_url, .. } => meld_result_image_url,
+                };
+                match CString::new(url) {
+                    Ok(s) => s.into_raw(),
+                    Err(_) => return FFIError::OutOfMemory as c_int,
+                }
+            },
+            None => std::ptr::null_mut(),
+        };
+
+        c_cards.push(CCardPrinting {
+            name,
+            set,
+            language,
+            border_crop,
+            back_side,
+        });
+    }
+
+    // Allocate array and result structure
+    let cards_array_size = c_cards.len() * std::mem::size_of::<CCardPrinting>();
+    let cards_ptr = unsafe { libc::malloc(cards_array_size) as *mut CCardPrinting };
+    let result_ptr = unsafe { libc::malloc(std::mem::size_of::<CCardSearchResult>()) as *mut CCardSearchResult };
+    
+    if cards_ptr.is_null() || result_ptr.is_null() {
+        // Clean up on failure
+        for card in c_cards {
+            unsafe {
+                if !card.name.is_null() { let _ = CString::from_raw(card.name); }
+                if !card.set.is_null() { let _ = CString::from_raw(card.set); }
+                if !card.language.is_null() { let _ = CString::from_raw(card.language); }
+                if !card.border_crop.is_null() { let _ = CString::from_raw(card.border_crop); }
+                if !card.back_side.is_null() { let _ = CString::from_raw(card.back_side); }
+            }
+        }
+        if !cards_ptr.is_null() { unsafe { libc::free(cards_ptr as *mut libc::c_void); } }
+        if !result_ptr.is_null() { unsafe { libc::free(result_ptr as *mut libc::c_void); } }
+        return FFIError::OutOfMemory as c_int;
+    }
+
+    unsafe {
+        std::ptr::copy_nonoverlapping(c_cards.as_ptr(), cards_ptr, c_cards.len());
+        *result_ptr = CCardSearchResult {
+            cards: cards_ptr,
+            count: c_cards.len(),
+        };
+        *output_result = result_ptr;
+    }
+
+    FFIError::Success as c_int
+}
+
+/// Free decklist entries array allocated by localhawk_parse_and_resolve_decklist
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_free_decklist_entries(entries: *mut CDeclistEntry, count: usize) {
+    if !entries.is_null() {
+        unsafe {
+            for i in 0..count {
+                let entry = entries.add(i);
+                if !(*entry).name.is_null() {
+                    let _ = CString::from_raw((*entry).name);
+                }
+                if !(*entry).set.is_null() {
+                    let _ = CString::from_raw((*entry).set);
+                }
+                if !(*entry).language.is_null() {
+                    let _ = CString::from_raw((*entry).language);
+                }
+            }
+            libc::free(entries as *mut libc::c_void);
+        }
+    }
+}
+
+/// Free card search result allocated by localhawk_search_card_printings
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_free_card_search_result(result: *mut CCardSearchResult) {
+    if !result.is_null() {
+        unsafe {
+            let result_ref = &*result;
+            if !result_ref.cards.is_null() {
+                for i in 0..result_ref.count {
+                    let card = result_ref.cards.add(i);
+                    if !(*card).name.is_null() {
+                        let _ = CString::from_raw((*card).name);
+                    }
+                    if !(*card).set.is_null() {
+                        let _ = CString::from_raw((*card).set);
+                    }
+                    if !(*card).language.is_null() {
+                        let _ = CString::from_raw((*card).language);
+                    }
+                    if !(*card).border_crop.is_null() {
+                        let _ = CString::from_raw((*card).border_crop);
+                    }
+                    if !(*card).back_side.is_null() {
+                        let _ = CString::from_raw((*card).back_side);
+                    }
+                }
+                libc::free(result_ref.cards as *mut libc::c_void);
+            }
+            libc::free(result as *mut libc::c_void);
+        }
+    }
+}
+
+/// Get cached image bytes for a given URL
+/// Returns image data if cached, NULL if not cached
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_get_cached_image_bytes(
+    image_url_cstr: *const c_char,
+    output_buffer: *mut *mut u8,
+    output_size: *mut usize,
+) -> c_int {
+    if image_url_cstr.is_null() || output_buffer.is_null() || output_size.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    let image_url = match unsafe { CStr::from_ptr(image_url_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    match crate::get_cached_image_bytes(image_url) {
+        Some(bytes) => {
+            let buffer = unsafe { libc::malloc(bytes.len()) as *mut u8 };
+            if buffer.is_null() {
+                return FFIError::OutOfMemory as c_int;
+            }
+
+            unsafe {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr(), buffer, bytes.len());
+                *output_buffer = buffer;
+                *output_size = bytes.len();
+            }
+
+            FFIError::Success as c_int
+        }
+        None => {
+            unsafe {
+                *output_buffer = std::ptr::null_mut();
+                *output_size = 0;
+            }
+            FFIError::ParseFailed as c_int // Using ParseFailed to indicate "not found"
+        }
+    }
+}
+
+/// Check if an image is cached without retrieving the bytes
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_is_image_cached(image_url_cstr: *const c_char) -> c_int {
+    if image_url_cstr.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    let image_url = match unsafe { CStr::from_ptr(image_url_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    if crate::get_cached_image_bytes(image_url).is_some() {
+        1 // TRUE - image is cached
+    } else {
+        0 // FALSE - image is not cached
+    }
+}
+
+// ============================================================================
+// Background Loading FFI Extensions
+// ============================================================================
+
+/// Parse decklist and start background image loading (fire and forget)
+/// This function parses the decklist, starts background loading, and returns immediately
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_parse_and_start_background_loading(
+    decklist_cstr: *const c_char,
+    global_face_mode: c_int,
+) -> c_int {
+    if decklist_cstr.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    let decklist = match unsafe { CStr::from_ptr(decklist_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    let face_mode = match global_face_mode {
+        0 => DoubleFaceMode::FrontOnly,
+        1 => DoubleFaceMode::BackOnly,
+        2 => DoubleFaceMode::BothSides,
+        _ => DoubleFaceMode::BothSides,
+    };
+
+    // Create a simple runtime for the async function call
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build() {
+        Ok(rt) => rt,
+        Err(_) => return FFIError::InitializationFailed as c_int,
+    };
+
+    // Use the new high-level function that parses and starts background loading
+    match rt.block_on(crate::ProxyGenerator::parse_and_start_background_loading(
+        decklist,
+        face_mode,
+    )) {
+        Ok(_entries) => FFIError::Success as c_int,
+        Err(_) => FFIError::ParseFailed as c_int,
+    }
+}
+
+/// C-compatible loading phase enum
+#[repr(C)]
+pub enum CLoadingPhase {
+    Selected = 0,     // Loading selected printings (based on set/lang hints)
+    Alternatives = 1, // Loading alternative printings  
+    Completed = 2,    // All done
+}
+
+/// C-compatible background load progress structure
+#[repr(C)]
+pub struct CBackgroundLoadProgress {
+    pub phase: CLoadingPhase,
+    pub current_entry: usize,
+    pub total_entries: usize,
+    pub selected_loaded: usize,
+    pub alternatives_loaded: usize,
+    pub total_alternatives: usize,
+    pub error_count: usize,
+}
+
+/// Opaque handle to background loading task
+pub type BackgroundLoadHandleId = usize;
+
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
+lazy_static::lazy_static! {
+    static ref BACKGROUND_HANDLES: Arc<Mutex<HashMap<BackgroundLoadHandleId, BackgroundLoadHandle>>> = 
+        Arc::new(Mutex::new(HashMap::new()));
+    static ref HANDLE_COUNTER: Arc<Mutex<BackgroundLoadHandleId>> = Arc::new(Mutex::new(0));
+}
+
+/// Start background image loading for decklist entries
+/// Returns a handle ID for tracking progress and cancellation
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_start_background_loading(
+    entries: *const CDeclistEntry,
+    count: usize,
+    handle_id: *mut BackgroundLoadHandleId,
+) -> c_int {
+    if entries.is_null() || handle_id.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    if count == 0 {
+        return FFIError::InvalidInput as c_int;
+    }
+
+    // Convert C entries to Rust entries
+    let rust_entries = unsafe {
+        let mut result = Vec::with_capacity(count);
+        for i in 0..count {
+            let entry = entries.add(i);
+            let name = CStr::from_ptr((*entry).name).to_string_lossy().to_string();
+            let set = if (*entry).set.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr((*entry).set).to_string_lossy().to_string())
+            };
+            let language = if (*entry).language.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr((*entry).language).to_string_lossy().to_string())
+            };
+            let face_mode = match (*entry).face_mode {
+                0 => DoubleFaceMode::FrontOnly,
+                1 => DoubleFaceMode::BackOnly,
+                2 => DoubleFaceMode::BothSides,
+                _ => DoubleFaceMode::BothSides, // Default fallback
+            };
+            let source_line_number = if (*entry).source_line_number >= 0 {
+                Some((*entry).source_line_number as usize)
+            } else {
+                None
+            };
+
+            result.push(crate::DecklistEntry {
+                multiple: (*entry).multiple,
+                name,
+                set,
+                lang: language,
+                face_mode,
+                source_line_number,
+            });
+        }
+        result
+    };
+
+    // Create a simple runtime for the async function call
+    let rt = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build() {
+        Ok(rt) => rt,
+        Err(_) => return FFIError::InitializationFailed as c_int,
+    };
+
+    // Convert to a decklist string for the high-level function
+    let decklist_string = rust_entries.iter()
+        .map(|entry| {
+            let mut line = format!("{} {}", entry.multiple, entry.name);
+            if let Some(ref set) = entry.set {
+                line.push_str(&format!(" [{}]", set));
+            }
+            if let Some(ref lang) = entry.lang {
+                line.push_str(&format!(" [{}]", lang));
+            }
+            line
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Use the new high-level function that parses and starts background loading
+    let global_face_mode = match rust_entries.first() {
+        Some(entry) => entry.face_mode.clone(),
+        None => crate::DoubleFaceMode::BothSides,
+    };
+
+    let _entries = match rt.block_on(crate::ProxyGenerator::parse_and_start_background_loading(
+        &decklist_string,
+        global_face_mode,
+    )) {
+        Ok(entries) => entries,
+        Err(_) => return FFIError::ParseFailed as c_int,
+    };
+
+    // Since we're using fire-and-forget, just return a dummy handle ID
+    unsafe {
+        *handle_id = 1; // Always return 1 since we don't track handles anymore
+    }
+
+    FFIError::Success as c_int
+}
+
+/// Get progress for a background loading task
+/// Returns latest progress if available, or indicates if task is finished
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_get_background_progress(
+    handle_id: BackgroundLoadHandleId,
+    progress: *mut CBackgroundLoadProgress,
+    has_progress: *mut c_int,
+) -> c_int {
+    if progress.is_null() || has_progress.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    let mut handles = BACKGROUND_HANDLES.lock().unwrap();
+    if let Some(handle) = handles.get_mut(&handle_id) {
+        if let Some(rust_progress) = handle.try_get_progress() {
+            unsafe {
+                *progress = CBackgroundLoadProgress {
+                    phase: match rust_progress.phase {
+                        LoadingPhase::Selected => CLoadingPhase::Selected,
+                        LoadingPhase::Alternatives => CLoadingPhase::Alternatives,
+                        LoadingPhase::Completed => CLoadingPhase::Completed,
+                    },
+                    current_entry: rust_progress.current_entry,
+                    total_entries: rust_progress.total_entries,
+                    selected_loaded: rust_progress.selected_loaded,
+                    alternatives_loaded: rust_progress.alternatives_loaded,
+                    total_alternatives: rust_progress.total_alternatives,
+                    error_count: rust_progress.errors.len(),
+                };
+                *has_progress = 1; // TRUE
+            }
+        } else {
+            unsafe {
+                *has_progress = 0; // FALSE - no new progress
+            }
+        }
+
+        // Clean up finished tasks
+        if handle.is_finished() {
+            handles.remove(&handle_id);
+        }
+
+        FFIError::Success as c_int
+    } else {
+        // Handle not found (probably finished and cleaned up)
+        unsafe {
+            *has_progress = 0;
+        }
+        FFIError::InvalidInput as c_int
+    }
+}
+
+/// Cancel background loading task
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_cancel_background_loading(handle_id: BackgroundLoadHandleId) -> c_int {
+    let mut handles = BACKGROUND_HANDLES.lock().unwrap();
+    if let Some(handle) = handles.get(&handle_id) {
+        handle.cancel();
+        handles.remove(&handle_id); // Remove immediately after cancellation
+        FFIError::Success as c_int
+    } else {
+        FFIError::InvalidInput as c_int
+    }
+}
+
+/// Check if background loading task is finished
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_is_background_loading_finished(handle_id: BackgroundLoadHandleId) -> c_int {
+    let mut handles = BACKGROUND_HANDLES.lock().unwrap();
+    if let Some(handle) = handles.get(&handle_id) {
+        if handle.is_finished() {
+            handles.remove(&handle_id); // Clean up finished task
+            1 // TRUE - finished
+        } else {
+            0 // FALSE - still running
+        }
+    } else {
+        1 // TRUE - not found means it's finished (and cleaned up)
     }
 }
 

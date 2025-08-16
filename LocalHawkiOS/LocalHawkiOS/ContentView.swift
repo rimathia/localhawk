@@ -2,16 +2,28 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var decklistText = """
-1 Lightning Bolt
-1 Counterspell
-1 Giant Growth
-1 Dark Ritual
+
+1 Gisela, the Broken Blade
+1 Bruna, the Fading Light
+1 Counterspell [7ED]
+// comments are ignored
+1 Memory Lapse [ja]
+1 kabira takedown
+1 kabira plateau
+1 cut // ribbons (pakh)
 """
     @State private var isGenerating = false
     @State private var pdfData: Data?
     @State private var errorMessage: String?
     @State private var showingShareSheet = false
     @State private var showingAdvancedOptions = false
+    @State private var showingPrintSelection = false
+    
+    // Print selection state
+    @State private var decklistEntries: [DecklistEntryData] = []
+    @State private var globalFaceMode: DoubleFaceMode = .bothSides
+    
+    // Background loading is now fire-and-forget, no state tracking needed
     
     var body: some View {
         NavigationView {
@@ -33,24 +45,46 @@ struct ContentView: View {
                         )
                 }
                 
-                Button(action: generatePDF) {
-                    HStack {
-                        if isGenerating {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .foregroundColor(.white)
-                        } else {
-                            Image(systemName: "doc.fill")
+                // Dual workflow buttons
+                HStack(spacing: 12) {
+                    // Simple workflow: Direct PDF generation  
+                    Button(action: generatePDFDirectly) {
+                        HStack {
+                            if isGenerating {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                    .foregroundColor(.white)
+                            } else {
+                                Image(systemName: "doc.fill")
+                            }
+                            Text(isGenerating ? "Generating..." : "Generate PDF")
                         }
-                        Text(isGenerating ? "Generating PDF..." : "Generate PDF")
+                        .foregroundColor(.white)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(isGenerating ? Color.gray : Color.blue)
+                        .cornerRadius(10)
                     }
-                    .foregroundColor(.white)
-                    .padding()
-                    .frame(maxWidth: .infinity)
-                    .background(isGenerating ? Color.gray : Color.blue)
-                    .cornerRadius(10)
+                    .disabled(isGenerating || decklistText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    
+                    // Advanced workflow: Preview first
+                    Button(action: startPreviewWorkflow) {
+                        HStack {
+                            Image(systemName: "photo.on.rectangle.angled")
+                            Text("Preview & Select")
+                        }
+                        .foregroundColor(.blue)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color(UIColor.secondarySystemBackground))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.blue, lineWidth: 1)
+                        )
+                    }
+                    .disabled(isGenerating || decklistText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .disabled(isGenerating || decklistText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 
                 if let errorMessage = errorMessage {
                     Text(errorMessage)
@@ -103,13 +137,23 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showingAdvancedOptions) {
-            // TODO: Add AdvancedOptionsView.swift file to Xcode project
-            Text("Advanced Options")
             AdvancedOptionsView()
+        }
+        .sheet(isPresented: $showingPrintSelection) {
+            PrintSelectionView(
+                entries: decklistEntries,
+                onGeneratePDF: generatePDFFromSelection
+            )
+        }
+        .onDisappear {
+            // Background loading is now fire-and-forget, no cleanup needed
         }
     }
     
-    private func generatePDF() {
+    // MARK: - Workflow Functions
+    
+    /// Direct PDF generation workflow (existing behavior)
+    private func generatePDFDirectly() {
         guard !decklistText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             errorMessage = "Please enter a decklist"
             return
@@ -138,6 +182,50 @@ struct ContentView: View {
             }
         }
     }
+    
+    /// Preview-first workflow with print selection
+    private func startPreviewWorkflow() {
+        guard !decklistText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorMessage = "Please enter a decklist"
+            return
+        }
+        
+        isGenerating = true
+        errorMessage = nil
+        
+        // Use the new combined parse + background loading function
+        Task(priority: .utility) {
+            let result = ProxyGenerator.parseAndStartBackgroundLoading(
+                decklistText.trimmingCharacters(in: .whitespacesAndNewlines),
+                globalFaceMode: globalFaceMode
+            )
+            
+            await MainActor.run {
+                isGenerating = false
+                
+                switch result {
+                case .success(let entries):
+                    decklistEntries = entries
+                    errorMessage = nil
+                    showingPrintSelection = true
+                    // Background loading is now started automatically by the core library
+                case .failure(let error):
+                    decklistEntries = []
+                    errorMessage = "Failed to parse decklist: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+    
+    /// Generate PDF from print selection (called from PrintSelectionView)
+    private func generatePDFFromSelection() {
+        // For now, fall back to direct PDF generation
+        // TODO: Implement PDF generation from selected printings
+        generatePDFDirectly()
+        showingPrintSelection = false
+    }
+    
+    // MARK: - Background loading is now handled automatically by the core library
 }
 
 // Helper struct for sharing PDFs
