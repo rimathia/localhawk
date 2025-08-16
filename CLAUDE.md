@@ -303,6 +303,7 @@ open -a Simulator
 #### iOS Application Files  
 - `MagicProxyiOS/MagicProxyiOS/MagicProxyiOSApp.swift` - App entry point and initialization
 - `MagicProxyiOS/MagicProxyiOS/ContentView.swift` - Main SwiftUI interface
+- `MagicProxyiOS/MagicProxyiOS/AdvancedOptionsView.swift` - Cache statistics and management interface
 - `MagicProxyiOS/MagicProxyiOS/ProxyGenerator.swift` - Swift FFI wrapper
 - `MagicProxyiOS/MagicProxyiOS/MagicProxyiOS-Bridging-Header.h` - C to Swift bridge
 - `MagicProxyiOS/MagicProxyiOS.xcodeproj/project.pbxproj` - Xcode project configuration
@@ -311,6 +312,161 @@ open -a Simulator
 - `ios-libs/libmagic_proxy_core_device.a` - Device static library
 - `ios-libs/libmagic_proxy_core_sim.a` - Simulator static library  
 - `ios-libs/magic_proxy.h` - C header file for integration
+
+### iOS Advanced Options Interface (August 16, 2025)
+
+**Status**: ✅ COMPLETED - Full cache statistics and management interface implemented
+
+#### Overview
+Successfully implemented a comprehensive Advanced Options interface for the iOS app, providing users with detailed cache statistics and management capabilities that match the desktop application's functionality.
+
+#### Features Implemented
+
+##### Cache Statistics Display
+- **Real-time Statistics**: Live display of cache counts, size estimates, and status
+- **Three Cache Types**: Image cache, search results cache, and card names database
+- **Visual Design**: Color-coded cards (blue, orange, green) with consistent typography
+- **Size Estimates**: Memory usage calculations displayed in user-friendly MB format
+
+##### Cache Management Actions
+- **Image Cache**: Clear functionality to free up storage space
+- **Card Names Database**: Force update from Scryfall API with progress indication
+- **Search Results Cache**: View statistics (clear functionality planned for future)
+
+##### Mobile-Optimized UI Design
+- **Expandable Path Display**: Shows path tail by default, expands to full path on tap
+- **Modal Presentation**: Gear icon in navigation bar opens full-screen sheet
+- **Smooth Animations**: 0.2s ease-in-out transitions for path expansion
+- **Native iOS Patterns**: Standard navigation, buttons, and layout conventions
+
+#### Technical Implementation
+
+##### FFI Cache Functions (`magic-proxy-core/src/ffi.rs`)
+```rust
+// Cache statistics structure
+#[repr(C)]
+pub struct CacheStats {
+    pub count: u32,
+    pub size_mb: f64,
+}
+
+// FFI functions for iOS integration
+pub extern "C" fn proxy_get_image_cache_stats() -> CacheStats
+pub extern "C" fn proxy_get_search_cache_stats() -> CacheStats
+pub extern "C" fn proxy_get_card_names_cache_stats() -> CacheStats
+pub extern "C" fn proxy_clear_image_cache() -> c_int
+pub extern "C" fn proxy_update_card_names() -> c_int
+pub extern "C" fn proxy_save_caches() -> c_int
+
+// Cache path functions for accurate display
+pub extern "C" fn proxy_get_image_cache_path() -> *mut c_char
+pub extern "C" fn proxy_get_search_cache_path() -> *mut c_char
+pub extern "C" fn proxy_get_card_names_cache_path() -> *mut c_char
+pub extern "C" fn proxy_free_string(ptr: *mut c_char)
+```
+
+##### Swift Wrapper Functions (`MagicProxyiOS/MagicProxyiOS/ProxyGenerator.swift`)
+```swift
+// Cache statistics wrapper
+static func getImageCacheStats() -> CacheStatistics {
+    let stats = proxy_get_image_cache_stats()
+    return CacheStatistics(count: stats.count, sizeMB: stats.size_mb)
+}
+
+// Cache path retrieval with automatic memory management
+static func getImageCachePath() -> String? {
+    guard let cString = proxy_get_image_cache_path() else { return nil }
+    defer { proxy_free_string(cString) }
+    return String(cString: cString)
+}
+
+// Cache management operations
+static func clearImageCache() -> Result<Void, ProxyGeneratorError>
+static func updateCardNames() -> Result<Void, ProxyGeneratorError>
+static func saveCaches() -> Result<Void, ProxyGeneratorError>
+```
+
+##### SwiftUI Components (`MagicProxyiOS/MagicProxyiOS/AdvancedOptionsView.swift`)
+
+**AdvancedOptionsView**: Main interface with cache statistics cards and management controls
+
+**CacheStatCard**: Reusable component for individual cache display
+- Color-coded backgrounds and borders
+- Statistics display with bullet points
+- Action buttons for cache operations
+- Expandable path display integration
+
+**ExpandablePathView**: Smart path truncation component
+```swift
+private var truncatedPath: String {
+    let maxLength = 35 // Character limit for one line
+    if path.count <= maxLength {
+        return path
+    }
+    // Show "..." + tail that fits
+    let tailLength = maxLength - 3
+    let startIndex = path.index(path.endIndex, offsetBy: -tailLength)
+    return "..." + path[startIndex...]
+}
+```
+
+#### Architecture Consistency
+
+##### Cache Path Centralization
+Successfully refactored all cache implementations to use centralized path functions from `globals.rs`, ensuring 100% consistency between displayed paths and actual file locations:
+
+- **ImageCache** → Uses `get_cache_directory_path()`
+- **CardNameCache** → Uses `get_card_names_cache_path()`
+- **SearchResultsCache** → Uses `get_search_cache_path()`
+- **SetCodesCache** → Uses `get_set_codes_cache_path()`
+- **LRU Implementations** → Use centralized path functions
+
+##### Cache Persistence Strategy
+Implemented hybrid approach for iOS app lifecycle:
+- **Background Save**: Automatic cache saving when app backgrounds/terminates
+- **Manual Save**: `save_caches()` function for explicit persistence
+- **Consistent API**: Same persistence interface across desktop and iOS
+
+#### User Experience
+
+##### Navigation Integration
+- **Gear Icon**: Standard iOS settings icon in navigation bar
+- **Sheet Presentation**: Modal overlay respects system appearance
+- **Done Button**: Clear dismissal action in navigation bar
+
+##### Error Handling
+- **User-Friendly Messages**: Clear error descriptions for failed operations
+- **Progress Indication**: "Updating..." state for long-running operations
+- **Success Feedback**: Temporary success messages with auto-dismiss
+
+##### Accessibility
+- **VoiceOver Support**: Proper text labels and hint text
+- **Touch Targets**: Sufficient size for tap gestures
+- **Color Independence**: Information conveyed through text, not just color
+
+#### Files Updated
+- `MagicProxyiOS/MagicProxyiOS/AdvancedOptionsView.swift` - Complete Advanced Options interface
+- `MagicProxyiOS/MagicProxyiOS/ContentView.swift` - Navigation integration with gear icon
+- `MagicProxyiOS/MagicProxyiOS/ProxyGenerator.swift` - Swift FFI wrapper functions
+- `MagicProxyiOS/MagicProxyiOS/MagicProxyiOSApp.swift` - Background cache saving
+- `magic-proxy-core/src/ffi.rs` - FFI functions for cache operations and paths
+- `magic-proxy-core/src/globals.rs` - Centralized cache path functions
+- `magic-proxy-core/include/magic_proxy.h` - C header declarations
+
+#### Testing Verification
+- ✅ **Cache Statistics**: Real-time display of accurate cache information
+- ✅ **Path Display**: Truncated paths expand correctly on tap
+- ✅ **Image Cache Clear**: Successfully clears cached images and updates UI
+- ✅ **Card Names Update**: Downloads fresh data with progress indication
+- ✅ **Background Persistence**: Caches saved when app backgrounds
+- ✅ **Memory Management**: Proper cleanup of FFI strings
+- ✅ **UI Responsiveness**: Smooth animations and native iOS feel
+
+#### Future Enhancements
+- **Search Cache Clear**: Implement clear functionality for search results cache
+- **Cache Size Limits**: User-configurable cache size limits
+- **Cache Analytics**: Detailed usage statistics and optimization suggestions
+- **Offline Mode**: Cache validation and offline functionality indicators
 
 ## Key Dependencies
 
