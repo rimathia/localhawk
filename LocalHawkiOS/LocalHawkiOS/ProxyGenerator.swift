@@ -40,7 +40,7 @@ struct DecklistEntryData {
     }
 }
 
-struct CardPrintingData {
+struct CardPrintingData: Equatable {
     let name: String
     let set: String
     let language: String
@@ -432,6 +432,83 @@ class ProxyGenerator {
         }
         
         return .success(CardSearchResultData(cards: cards))
+    }
+    
+    /// Generate PDF from an array of DecklistEntryData structures
+    /// This allows PDF generation with modified entries (e.g., after print selection)
+    /// - Parameter entries: Array of decklist entries with potentially modified set/language selections
+    /// - Returns: Result containing PDF data or error
+    static func generatePDFFromEntries(_ entries: [DecklistEntryData]) -> Result<Data, ProxyGeneratorError> {
+        // Ensure initialization
+        guard initialize() else {
+            return .failure(.initializationFailed)
+        }
+        
+        guard !entries.isEmpty else {
+            return .failure(.invalidInput)
+        }
+        
+        // Convert Swift DecklistEntryData to C DecklistEntry structures
+        var cEntries: [DecklistEntry] = []
+        var cStrings: [UnsafeMutablePointer<CChar>] = [] // Keep track of allocated strings
+        
+        // Helper function to create C string and track it for cleanup
+        func createCString(_ string: String?) -> UnsafeMutablePointer<CChar>? {
+            guard let string = string else { return nil }
+            let cString = strdup(string)
+            if let cString = cString {
+                cStrings.append(cString)
+            }
+            return cString
+        }
+        
+        for entry in entries {
+            let cEntry = DecklistEntry(
+                multiple: entry.multiple,
+                name: createCString(entry.name)!,
+                set: createCString(entry.set),
+                language: createCString(entry.language),
+                face_mode: entry.faceMode.rawValue,
+                source_line_number: entry.sourceLineNumber ?? -1
+            )
+            cEntries.append(cEntry)
+        }
+        
+        // Ensure all C strings are freed regardless of how this scope exits
+        defer {
+            for cString in cStrings {
+                free(cString)
+            }
+        }
+        
+        var buffer: UnsafeMutablePointer<UInt8>?
+        var size: Int = 0
+        
+        // Call the FFI function
+        let result = localhawk_generate_pdf_from_entries(
+            cEntries,
+            cEntries.count,
+            &buffer,
+            &size
+        )
+        
+        // Check for errors
+        guard result == 0 else {
+            return .failure(convertErrorCode(result))
+        }
+        
+        // Ensure we got valid data
+        guard let buffer = buffer, size > 0 else {
+            return .failure(.pdfGenerationFailed)
+        }
+        
+        // Ensure buffer is freed regardless of how this scope exits
+        defer { localhawk_free_buffer(buffer) }
+        
+        // Create Data object from the buffer
+        let data = Data(bytes: buffer, count: size)
+        
+        return .success(data)
     }
     
     // MARK: - Image Cache Functions

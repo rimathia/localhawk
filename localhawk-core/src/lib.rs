@@ -357,18 +357,27 @@ impl ProxyGenerator {
     ) -> Result<Vec<DecklistEntry>, ProxyError> {
         // First parse the decklist
         let entries = Self::parse_and_resolve_decklist(decklist_text, global_face_mode).await?;
-        
+
         // Start background loading for all entries (fire and forget)
         if !entries.is_empty() {
             let entries_clone = entries.clone();
             let entry_count = entries.len();
+            println!("About to spawn background loading task for {} entries", entry_count);
             tokio::spawn(async move {
+                println!("Background loading task started for {} entries", entry_count);
                 let _handle = start_background_image_loading(entries_clone);
+                println!("Background loading task completed for {} entries", entry_count);
                 // We don't wait for completion - just let it run in the background
-                log::debug!("Background image loading started for {} entries", entry_count);
+                log::debug!(
+                    "Background image loading started for {} entries",
+                    entry_count
+                );
             });
+            println!("tokio::spawn called successfully");
+        } else {
+            println!("No entries to load in background");
         }
-        
+
         // Return parsed entries immediately
         Ok(entries)
     }

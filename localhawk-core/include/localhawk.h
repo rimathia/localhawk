@@ -310,6 +310,28 @@ void localhawk_free_decklist_entries(DecklistEntry* entries, size_t count);
 void localhawk_free_card_search_result(CardSearchResult* result);
 
 /**
+ * Generate PDF from an array of DecklistEntry structures.
+ * This allows PDF generation with modified entries (e.g., after print selection).
+ * 
+ * @param entries Array of DecklistEntry structures
+ * @param entry_count Number of entries in the array
+ * @param output_buffer Pointer to buffer pointer (will be allocated by this function)
+ * @param output_size Pointer to size_t that will receive the buffer size
+ * @return LOCALHAWK_SUCCESS on success, negative error code on failure
+ * 
+ * Memory Management:
+ * - The output buffer is allocated by this function using malloc
+ * - Caller must call localhawk_free_buffer to free the memory
+ * - If function fails, no memory is allocated
+ */
+int32_t localhawk_generate_pdf_from_entries(
+    const DecklistEntry* entries,
+    size_t entry_count,
+    uint8_t** output_buffer,
+    size_t* output_size
+);
+
+/**
  * Get cached image bytes for a given URL.
  * 
  * @param image_url_cstr Null-terminated C string containing the image URL

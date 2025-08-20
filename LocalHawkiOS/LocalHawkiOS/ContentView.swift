@@ -141,7 +141,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingPrintSelection) {
             PrintSelectionView(
-                entries: decklistEntries,
+                entries: $decklistEntries,
                 onGeneratePDF: generatePDFFromSelection
             )
         }
@@ -219,10 +219,34 @@ struct ContentView: View {
     
     /// Generate PDF from print selection (called from PrintSelectionView)
     private func generatePDFFromSelection() {
-        // For now, fall back to direct PDF generation
-        // TODO: Implement PDF generation from selected printings
-        generatePDFDirectly()
-        showingPrintSelection = false
+        guard !decklistEntries.isEmpty else {
+            errorMessage = "No entries to generate PDF from"
+            showingPrintSelection = false
+            return
+        }
+        
+        isGenerating = true
+        errorMessage = nil
+        pdfData = nil
+        
+        // Use Task with appropriate priority for PDF generation
+        Task(priority: .utility) {
+            let result = ProxyGenerator.generatePDFFromEntries(decklistEntries)
+            
+            await MainActor.run {
+                isGenerating = false
+                showingPrintSelection = false
+                
+                switch result {
+                case .success(let data):
+                    pdfData = data
+                    errorMessage = nil
+                case .failure(let error):
+                    pdfData = nil
+                    errorMessage = "Failed to generate PDF: \(error.localizedDescription)"
+                }
+            }
+        }
     }
     
     // MARK: - Background loading is now handled automatically by the core library

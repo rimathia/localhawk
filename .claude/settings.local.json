@@ -29,7 +29,8 @@
       "Bash(xcodebuild:*)",
       "Bash(rustup target:*)",
       "Bash(./build_ios.sh)",
-      "Bash(cargo tree:*)"
+      "Bash(cargo tree:*)",
+      "Bash(swiftc:*)"
     ],
     "deny": []
   }

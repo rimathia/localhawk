@@ -1,12 +1,22 @@
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
+use std::sync::OnceLock;
 
 use crate::{
-    DoubleFaceMode, PdfOptions, ProxyGenerator, force_update_card_lookup,
-    get_card_names_cache_path, get_card_names_cache_size, get_image_cache_info,
-    get_image_cache_path, get_search_cache_path, get_search_results_cache_info, initialize_caches,
-    save_caches, background_loading::{BackgroundLoadHandle, LoadingPhase},
+    DoubleFaceMode, PdfOptions, ProxyGenerator,
+    background_loading::{BackgroundLoadHandle, LoadingPhase},
+    force_update_card_lookup, get_card_names_cache_path, get_card_names_cache_size,
+    get_image_cache_info, get_image_cache_path, get_search_cache_path,
+    get_search_results_cache_info, initialize_caches, save_caches,
 };
+
+/// Global tokio runtime for all FFI operations
+static FFI_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
+/// Get the FFI tokio runtime, returns None if not initialized
+fn get_ffi_runtime() -> Option<&'static tokio::runtime::Runtime> {
+    FFI_RUNTIME.get()
+}
 
 /// Error codes for FFI functions
 #[repr(C)]
@@ -24,16 +34,26 @@ pub enum FFIError {
 /// Must be called before any other FFI functions
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_initialize() -> c_int {
-    // Set up a basic tokio runtime for the blocking call
+    // Create the global tokio runtime that will be used for all FFI operations
     // Use current_thread runtime to avoid QoS priority inversion on iOS
     let rt = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
-        .build() {
+        .build()
+    {
         Ok(rt) => rt,
         Err(_) => return FFIError::InitializationFailed as c_int,
     };
 
-    match rt.block_on(initialize_caches()) {
+    // Initialize caches using the new runtime
+    let init_result = rt.block_on(initialize_caches());
+
+    // Store the runtime globally for all subsequent FFI calls
+    if FFI_RUNTIME.set(rt).is_err() {
+        // Runtime was already initialized - this is an error
+        return FFIError::InitializationFailed as c_int;
+    }
+
+    match init_result {
         Ok(_) => FFIError::Success as c_int,
         Err(_) => FFIError::InitializationFailed as c_int,
     }
@@ -105,11 +125,11 @@ pub extern "C" fn localhawk_generate_pdf_from_decklist(
     //     })
     //     .build()?;
     // ```
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build() {
-        Ok(rt) => rt,
-        Err(_) => return FFIError::InitializationFailed as c_int,
+    
+    // Use the global runtime instead of creating a temporary one
+    let rt = match get_ffi_runtime() {
+        Some(rt) => rt,
+        None => return FFIError::InitializationFailed as c_int, // Must call localhawk_initialize first
     };
 
     // Generate PDF using existing core functionality
@@ -339,7 +359,7 @@ pub struct CDeclistEntry {
     pub multiple: i32,
     pub name: *mut c_char,
     pub set: *mut c_char,        // NULL if not specified
-    pub language: *mut c_char,   // NULL if not specified  
+    pub language: *mut c_char,   // NULL if not specified
     pub face_mode: c_int,        // DoubleFaceMode as int
     pub source_line_number: i32, // -1 if not specified
 }
@@ -386,11 +406,10 @@ pub extern "C" fn localhawk_parse_and_resolve_decklist(
         _ => return FFIError::InvalidInput as c_int,
     };
 
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build() {
-        Ok(rt) => rt,
-        Err(_) => return FFIError::InitializationFailed as c_int,
+    // Use the FFI runtime instead of creating a temporary one
+    let rt = match get_ffi_runtime() {
+        Some(rt) => rt,
+        None => return FFIError::InitializationFailed as c_int, // Must call localhawk_initialize first
     };
 
     let entries = match rt.block_on(async {
@@ -407,8 +426,18 @@ pub extern "C" fn localhawk_parse_and_resolve_decklist(
             Ok(s) => s.into_raw(),
             Err(_) => return FFIError::OutOfMemory as c_int,
         };
-        let set = entry.set.map(|s| CString::new(s).ok()).flatten().map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut());
-        let language = entry.lang.map(|s| CString::new(s).ok()).flatten().map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut());
+        let set = entry
+            .set
+            .map(|s| CString::new(s).ok())
+            .flatten()
+            .map(|s| s.into_raw())
+            .unwrap_or(std::ptr::null_mut());
+        let language = entry
+            .lang
+            .map(|s| CString::new(s).ok())
+            .flatten()
+            .map(|s| s.into_raw())
+            .unwrap_or(std::ptr::null_mut());
         let face_mode_int = match entry.face_mode {
             DoubleFaceMode::FrontOnly => 0,
             DoubleFaceMode::BackOnly => 1,
@@ -432,13 +461,19 @@ pub extern "C" fn localhawk_parse_and_resolve_decklist(
         // Clean up allocated strings
         for entry in c_entries {
             if !entry.name.is_null() {
-                unsafe { let _ = CString::from_raw(entry.name); }
+                unsafe {
+                    let _ = CString::from_raw(entry.name);
+                }
             }
             if !entry.set.is_null() {
-                unsafe { let _ = CString::from_raw(entry.set); }
+                unsafe {
+                    let _ = CString::from_raw(entry.set);
+                }
             }
             if !entry.language.is_null() {
-                unsafe { let _ = CString::from_raw(entry.language); }
+                unsafe {
+                    let _ = CString::from_raw(entry.language);
+                }
             }
         }
         return FFIError::OutOfMemory as c_int;
@@ -469,16 +504,13 @@ pub extern "C" fn localhawk_search_card_printings(
         Err(_) => return FFIError::InvalidInput as c_int,
     };
 
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build() {
-        Ok(rt) => rt,
-        Err(_) => return FFIError::InitializationFailed as c_int,
+    // Use the FFI runtime instead of creating a temporary one
+    let rt = match get_ffi_runtime() {
+        Some(rt) => rt,
+        None => return FFIError::InitializationFailed as c_int, // Must call localhawk_initialize first
     };
 
-    let search_result = match rt.block_on(async {
-        ProxyGenerator::search_card(card_name).await
-    }) {
+    let search_result = match rt.block_on(async { ProxyGenerator::search_card(card_name).await }) {
         Ok(result) => result,
         Err(_) => return FFIError::ParseFailed as c_int,
     };
@@ -507,13 +539,16 @@ pub extern "C" fn localhawk_search_card_printings(
                 // Extract image URL from BackSide enum
                 let url = match back {
                     crate::scryfall::models::BackSide::DfcBack { image_url, .. } => image_url,
-                    crate::scryfall::models::BackSide::ContributesToMeld { meld_result_image_url, .. } => meld_result_image_url,
+                    crate::scryfall::models::BackSide::ContributesToMeld {
+                        meld_result_image_url,
+                        ..
+                    } => meld_result_image_url,
                 };
                 match CString::new(url) {
                     Ok(s) => s.into_raw(),
                     Err(_) => return FFIError::OutOfMemory as c_int,
                 }
-            },
+            }
             None => std::ptr::null_mut(),
         };
 
@@ -529,21 +564,40 @@ pub extern "C" fn localhawk_search_card_printings(
     // Allocate array and result structure
     let cards_array_size = c_cards.len() * std::mem::size_of::<CCardPrinting>();
     let cards_ptr = unsafe { libc::malloc(cards_array_size) as *mut CCardPrinting };
-    let result_ptr = unsafe { libc::malloc(std::mem::size_of::<CCardSearchResult>()) as *mut CCardSearchResult };
-    
+    let result_ptr =
+        unsafe { libc::malloc(std::mem::size_of::<CCardSearchResult>()) as *mut CCardSearchResult };
+
     if cards_ptr.is_null() || result_ptr.is_null() {
         // Clean up on failure
         for card in c_cards {
             unsafe {
-                if !card.name.is_null() { let _ = CString::from_raw(card.name); }
-                if !card.set.is_null() { let _ = CString::from_raw(card.set); }
-                if !card.language.is_null() { let _ = CString::from_raw(card.language); }
-                if !card.border_crop.is_null() { let _ = CString::from_raw(card.border_crop); }
-                if !card.back_side.is_null() { let _ = CString::from_raw(card.back_side); }
+                if !card.name.is_null() {
+                    let _ = CString::from_raw(card.name);
+                }
+                if !card.set.is_null() {
+                    let _ = CString::from_raw(card.set);
+                }
+                if !card.language.is_null() {
+                    let _ = CString::from_raw(card.language);
+                }
+                if !card.border_crop.is_null() {
+                    let _ = CString::from_raw(card.border_crop);
+                }
+                if !card.back_side.is_null() {
+                    let _ = CString::from_raw(card.back_side);
+                }
             }
         }
-        if !cards_ptr.is_null() { unsafe { libc::free(cards_ptr as *mut libc::c_void); } }
-        if !result_ptr.is_null() { unsafe { libc::free(result_ptr as *mut libc::c_void); } }
+        if !cards_ptr.is_null() {
+            unsafe {
+                libc::free(cards_ptr as *mut libc::c_void);
+            }
+        }
+        if !result_ptr.is_null() {
+            unsafe {
+                libc::free(result_ptr as *mut libc::c_void);
+            }
+        }
         return FFIError::OutOfMemory as c_int;
     }
 
@@ -701,19 +755,40 @@ pub extern "C" fn localhawk_parse_and_start_background_loading(
         _ => DoubleFaceMode::BothSides,
     };
 
-    // Create a simple runtime for the async function call
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build() {
-        Ok(rt) => rt,
-        Err(_) => return FFIError::InitializationFailed as c_int,
+    // Use the global runtime instead of creating a temporary one
+    let rt = match get_ffi_runtime() {
+        Some(rt) => rt,
+        None => return FFIError::InitializationFailed as c_int, // Must call localhawk_initialize first
     };
 
-    // Use the new high-level function that parses and starts background loading
-    match rt.block_on(crate::ProxyGenerator::parse_and_start_background_loading(
-        decklist,
-        face_mode,
-    )) {
+    // Use the persistent runtime - background tasks will continue after this function returns
+    match rt.block_on(async {
+        // Parse the decklist first
+        let entries = crate::ProxyGenerator::parse_and_resolve_decklist(decklist, face_mode).await?;
+        
+        // Start background loading for all entries (fire and forget)
+        if !entries.is_empty() {
+            let entries_clone = entries.clone();
+            let entry_count = entries.len();
+            println!("About to spawn background loading task for {} entries", entry_count);
+            
+            // Spawn the task and give it a moment to start
+            let handle = tokio::spawn(async move {
+                println!("Background loading task started for {} entries", entry_count);
+                let _handle = crate::start_background_image_loading(entries_clone);
+                println!("Background loading task completed for {} entries", entry_count);
+            });
+            
+            // Give the spawned task a moment to start before returning
+            // This ensures the task actually begins execution
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+            println!("tokio::spawn called successfully, gave task time to start");
+        } else {
+            println!("No entries to load in background");
+        }
+        
+        Ok::<Vec<crate::DecklistEntry>, crate::ProxyError>(entries)
+    }) {
         Ok(_entries) => FFIError::Success as c_int,
         Err(_) => FFIError::ParseFailed as c_int,
     }
@@ -723,7 +798,7 @@ pub extern "C" fn localhawk_parse_and_start_background_loading(
 #[repr(C)]
 pub enum CLoadingPhase {
     Selected = 0,     // Loading selected printings (based on set/lang hints)
-    Alternatives = 1, // Loading alternative printings  
+    Alternatives = 1, // Loading alternative printings
     Completed = 2,    // All done
 }
 
@@ -746,7 +821,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 lazy_static::lazy_static! {
-    static ref BACKGROUND_HANDLES: Arc<Mutex<HashMap<BackgroundLoadHandleId, BackgroundLoadHandle>>> = 
+    static ref BACKGROUND_HANDLES: Arc<Mutex<HashMap<BackgroundLoadHandleId, BackgroundLoadHandle>>> =
         Arc::new(Mutex::new(HashMap::new()));
     static ref HANDLE_COUNTER: Arc<Mutex<BackgroundLoadHandleId>> = Arc::new(Mutex::new(0));
 }
@@ -781,7 +856,11 @@ pub extern "C" fn localhawk_start_background_loading(
             let language = if (*entry).language.is_null() {
                 None
             } else {
-                Some(CStr::from_ptr((*entry).language).to_string_lossy().to_string())
+                Some(
+                    CStr::from_ptr((*entry).language)
+                        .to_string_lossy()
+                        .to_string(),
+                )
             };
             let face_mode = match (*entry).face_mode {
                 0 => DoubleFaceMode::FrontOnly,
@@ -807,16 +886,15 @@ pub extern "C" fn localhawk_start_background_loading(
         result
     };
 
-    // Create a simple runtime for the async function call
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build() {
-        Ok(rt) => rt,
-        Err(_) => return FFIError::InitializationFailed as c_int,
+    // Use the FFI runtime instead of creating a temporary one
+    let rt = match get_ffi_runtime() {
+        Some(rt) => rt,
+        None => return FFIError::InitializationFailed as c_int, // Must call localhawk_initialize first
     };
 
     // Convert to a decklist string for the high-level function
-    let decklist_string = rust_entries.iter()
+    let decklist_string = rust_entries
+        .iter()
         .map(|entry| {
             let mut line = format!("{} {}", entry.multiple, entry.name);
             if let Some(ref set) = entry.set {
@@ -919,7 +997,9 @@ pub extern "C" fn localhawk_cancel_background_loading(handle_id: BackgroundLoadH
 
 /// Check if background loading task is finished
 #[unsafe(no_mangle)]
-pub extern "C" fn localhawk_is_background_loading_finished(handle_id: BackgroundLoadHandleId) -> c_int {
+pub extern "C" fn localhawk_is_background_loading_finished(
+    handle_id: BackgroundLoadHandleId,
+) -> c_int {
     let mut handles = BACKGROUND_HANDLES.lock().unwrap();
     if let Some(handle) = handles.get(&handle_id) {
         if handle.is_finished() {
@@ -931,6 +1011,113 @@ pub extern "C" fn localhawk_is_background_loading_finished(handle_id: Background
     } else {
         1 // TRUE - not found means it's finished (and cleaned up)
     }
+}
+
+/// Generate PDF from an array of DecklistEntry structures
+/// This allows PDF generation with modified entries (e.g., after print selection)
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_generate_pdf_from_entries(
+    entries: *const CDeclistEntry,
+    entry_count: usize,
+    output_buffer: *mut *mut u8,
+    output_size: *mut usize,
+) -> c_int {
+    if entries.is_null() || output_buffer.is_null() || output_size.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    if entry_count == 0 {
+        return FFIError::InvalidInput as c_int;
+    }
+
+    // Convert C structures to Rust DecklistEntry structures
+    let mut rust_entries = Vec::new();
+    for i in 0..entry_count {
+        let c_entry = unsafe { &*entries.add(i) };
+
+        // Convert C strings to Rust strings
+        let name = if c_entry.name.is_null() {
+            return FFIError::InvalidInput as c_int;
+        } else {
+            match unsafe { CStr::from_ptr(c_entry.name) }.to_str() {
+                Ok(s) => s.to_string(),
+                Err(_) => return FFIError::InvalidInput as c_int,
+            }
+        };
+
+        let set = if c_entry.set.is_null() {
+            None
+        } else {
+            match unsafe { CStr::from_ptr(c_entry.set) }.to_str() {
+                Ok(s) => Some(s.to_string()),
+                Err(_) => return FFIError::InvalidInput as c_int,
+            }
+        };
+
+        let lang = if c_entry.language.is_null() {
+            None
+        } else {
+            match unsafe { CStr::from_ptr(c_entry.language) }.to_str() {
+                Ok(s) => Some(s.to_string()),
+                Err(_) => return FFIError::InvalidInput as c_int,
+            }
+        };
+
+        let face_mode = match c_entry.face_mode {
+            0 => DoubleFaceMode::FrontOnly,
+            1 => DoubleFaceMode::BackOnly,
+            2 => DoubleFaceMode::BothSides,
+            _ => DoubleFaceMode::BothSides,
+        };
+
+        let source_line_number = if c_entry.source_line_number < 0 {
+            None
+        } else {
+            Some(c_entry.source_line_number as usize)
+        };
+
+        rust_entries.push(crate::DecklistEntry {
+            multiple: c_entry.multiple,
+            name,
+            set,
+            lang,
+            face_mode,
+            source_line_number,
+        });
+    }
+
+    // Use the FFI runtime instead of creating a temporary one
+    let rt = match get_ffi_runtime() {
+        Some(rt) => rt,
+        None => return FFIError::InitializationFailed as c_int, // Must call localhawk_initialize first
+    };
+
+    // Generate PDF using existing core functionality
+    let pdf_data = match rt.block_on(async {
+        let pdf_options = PdfOptions::default();
+        ProxyGenerator::generate_pdf_from_entries(&rust_entries, pdf_options, |current, total| {
+            log::debug!("PDF generation progress: {}/{}", current, total);
+        })
+        .await
+    }) {
+        Ok(data) => data,
+        Err(_) => return FFIError::PdfGenerationFailed as c_int,
+    };
+
+    // Allocate buffer for PDF data
+    let buffer = unsafe { libc::malloc(pdf_data.len()) as *mut u8 };
+    if buffer.is_null() {
+        return FFIError::OutOfMemory as c_int;
+    }
+
+    // Copy PDF data to buffer
+    unsafe {
+        std::ptr::copy_nonoverlapping(pdf_data.as_ptr(), buffer, pdf_data.len());
+        *output_buffer = buffer;
+        *output_size = pdf_data.len();
+    }
+
+    FFIError::Success as c_int
 }
 
 #[cfg(test)]

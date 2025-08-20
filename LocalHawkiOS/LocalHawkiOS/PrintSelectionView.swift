@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct PrintSelectionView: View {
-    let entries: [DecklistEntryData]
+    @Binding var entries: [DecklistEntryData]
     let onGeneratePDF: () -> Void
     
     @Environment(\.dismiss) private var dismiss
@@ -36,15 +36,28 @@ struct PrintSelectionView: View {
                     
                     // 3x3 Grid Preview (matching desktop app)
                     VStack(spacing: 12) {
-                        Text("Preview Grid")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal)
+                        HStack {
+                            Text("Preview Grid")
+                                .font(.headline)
+                            
+                            Spacer()
+                            
+                            Button("Reload Images") {
+                                reloadGridImages()
+                            }
+                            .font(.caption)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.blue)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                        }
+                        .padding(.horizontal)
                         
                         GridPreviewSection(
                             entries: entries,
                             selectedPrintings: selectedPrintings,
-                            availablePrintings: availablePrintings,
+                            availablePrintings: $availablePrintings,
                             currentPage: 0 // TODO: Add page navigation
                         )
                         .padding(.horizontal)
@@ -75,6 +88,7 @@ struct PrintSelectionView: View {
                                                 availablePrintings: availablePrintings[entry.name] ?? [],
                                                 onPrintingSelected: { printingIndex in
                                                     selectedPrintings[entryKey(for: entry)] = printingIndex
+                                                    applySelectedPrintingToEntry(entryIndex: index, printingIndex: printingIndex)
                                                 }
                                             )
                                         }
@@ -121,6 +135,9 @@ struct PrintSelectionView: View {
                     }
                 }
             }
+            .onAppear {
+                loadAvailablePrintings()
+            }
         }
     }
     
@@ -131,6 +148,143 @@ struct PrintSelectionView: View {
         } else {
             return "name_\(entry.name)"
         }
+    }
+    
+    private func loadAvailablePrintings() {
+        print("loadAvailablePrintings() called with \(entries.count) entries")
+        isLoadingPrintings = true
+        errorMessage = nil
+        
+        // Get unique card names from entries
+        let uniqueCardNames = Set(entries.map { $0.name })
+        print("Unique card names: \(uniqueCardNames)")
+        
+        Task {
+            var newAvailablePrintings: [String: [CardPrintingData]] = [:]
+            var hasError = false
+            var errorMsg = ""
+            
+            for cardName in uniqueCardNames {
+                print("Searching for printings of: \(cardName)")
+                let result = ProxyGenerator.searchCardPrintings(cardName)
+                
+                switch result {
+                case .success(let searchResult):
+                    print("Found \(searchResult.cards.count) printings for \(cardName)")
+                    newAvailablePrintings[cardName] = searchResult.cards
+                case .failure(let error):
+                    print("Error searching for \(cardName): \(error)")
+                    hasError = true
+                    errorMsg = "Failed to load printings for \(cardName): \(error.localizedDescription)"
+                    break // Stop on first error to avoid spamming
+                }
+            }
+            
+            await MainActor.run {
+                print("MainActor.run reached, hasError: \(hasError)")
+                if hasError {
+                    print("Setting error message: \(errorMsg)")
+                    errorMessage = errorMsg
+                } else {
+                    print("Updating availablePrintings with \(newAvailablePrintings.count) cards")
+                    for (cardName, printings) in newAvailablePrintings {
+                        print("  \(cardName): \(printings.count) printings")
+                    }
+                    availablePrintings = newAvailablePrintings
+                    
+                    // Initialize selected printings with best matches
+                    initializeSelectedPrintings()
+                }
+                
+                isLoadingPrintings = false
+                print("loadAvailablePrintings completed")
+            }
+        }
+    }
+    
+    private func initializeSelectedPrintings() {
+        for entry in entries {
+            let key = entryKey(for: entry)
+            
+            // Skip if already selected
+            if selectedPrintings[key] != nil {
+                continue
+            }
+            
+            guard let printings = availablePrintings[entry.name], !printings.isEmpty else {
+                selectedPrintings[key] = 0 // Default to first if no printings found
+                continue
+            }
+            
+            // Find best match based on entry's set and language preferences
+            var bestIndex = 0
+            
+            // If entry has set preference, try to find matching set
+            if let preferredSet = entry.set {
+                for (index, printing) in printings.enumerated() {
+                    if printing.set.lowercased() == preferredSet.lowercased() {
+                        // If language also matches, this is perfect
+                        if let preferredLang = entry.language {
+                            if printing.language.lowercased() == preferredLang.lowercased() {
+                                bestIndex = index
+                                break
+                            }
+                        } else {
+                            // Set matches, language doesn't matter
+                            bestIndex = index
+                            break
+                        }
+                    }
+                }
+            }
+            // If entry has language preference but no set, try to find matching language
+            else if let preferredLang = entry.language {
+                for (index, printing) in printings.enumerated() {
+                    if printing.language.lowercased() == preferredLang.lowercased() {
+                        bestIndex = index
+                        break
+                    }
+                }
+            }
+            
+            selectedPrintings[key] = bestIndex
+        }
+    }
+    
+    private func reloadGridImages() {
+        // Force reload of all grid images by triggering a view refresh
+        // This will cause all GridCardView instances to call loadImageForEntry again
+        print("Reloading grid images...")
+        
+        // We can trigger this by updating a state variable that GridCardView observes
+        // For now, just force the availablePrintings to refresh which will trigger image reloads
+        let current = availablePrintings
+        availablePrintings = [:]
+        
+        // Small delay then restore - this forces GridCardView to refresh
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            availablePrintings = current
+        }
+    }
+    
+    private func applySelectedPrintingToEntry(entryIndex: Int, printingIndex: Int) {
+        guard entryIndex < entries.count else { return }
+        
+        let entry = entries[entryIndex]
+        guard let printings = availablePrintings[entry.name],
+              printingIndex < printings.count else { return }
+        
+        let selectedPrinting = printings[printingIndex]
+        
+        // Update the entry with the selected printing's set and language
+        entries[entryIndex] = DecklistEntryData(
+            multiple: entry.multiple,
+            name: entry.name,
+            set: selectedPrinting.set,
+            language: selectedPrinting.language,
+            faceMode: entry.faceMode,
+            sourceLineNumber: entry.sourceLineNumber
+        )
     }
     
 }
@@ -222,7 +376,7 @@ struct CardEntryRow: View {
 struct GridPreviewSection: View {
     let entries: [DecklistEntryData]
     let selectedPrintings: [String: Int]
-    let availablePrintings: [String: [CardPrintingData]]
+    @Binding var availablePrintings: [String: [CardPrintingData]]
     let currentPage: Int
     
     private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 3)
@@ -236,7 +390,7 @@ struct GridPreviewSection: View {
                     GridCardView(
                         entry: getEntryForGridPosition(index),
                         selectedPrintings: selectedPrintings,
-                        availablePrintings: availablePrintings
+                        availablePrintings: $availablePrintings
                     )
                     .aspectRatio(480.0/680.0, contentMode: .fit) // Magic card aspect ratio
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -273,7 +427,7 @@ struct GridPreviewSection: View {
 struct GridCardView: View {
     let entry: DecklistEntryData?
     let selectedPrintings: [String: Int]
-    let availablePrintings: [String: [CardPrintingData]]
+    @Binding var availablePrintings: [String: [CardPrintingData]]
     
     @State private var imageData: Data?
     @State private var isLoadingImage = false
@@ -333,10 +487,18 @@ struct GridCardView: View {
         }
         .onAppear {
             if let entry = entry {
+                print("GridCardView onAppear for: \(entry.name)")
                 loadImageForEntry(entry)
+            } else {
+                print("GridCardView onAppear with nil entry")
             }
         }
         .onChange(of: selectedPrintings) { _ in
+            if let entry = entry {
+                loadImageForEntry(entry)
+            }
+        }
+        .onChange(of: availablePrintings) { _ in
             if let entry = entry {
                 loadImageForEntry(entry)
             }
@@ -348,8 +510,19 @@ struct GridCardView: View {
         let entryKey = entryKey(for: entry)
         let selectedIndex = selectedPrintings[entryKey] ?? 0
         
+        print("Loading image for entry: \(entry.name)")
+        print("Available printings count: \(availablePrintings[entry.name]?.count ?? 0)")
+        print("Selected index: \(selectedIndex)")
+        
         guard let printings = availablePrintings[entry.name],
-              selectedIndex < printings.count else {
+              !printings.isEmpty else {
+            print("No printings available yet for \(entry.name)")
+            // No printings available yet - check if any image for this card is cached
+            tryLoadAnyCachedImageForCard(entry.name)
+            return
+        }
+        
+        guard selectedIndex < printings.count else {
             imageData = nil
             return
         }
@@ -374,12 +547,17 @@ struct GridCardView: View {
                 isLoadingImage = false
             }
         } else {
-            // Image not cached - show placeholder
-            imageData = nil
-            isLoadingImage = false
-            // Note: We don't trigger network loading here since the user specified
-            // that all images should come from the core library's cache
+            // Selected printing not cached - try any cached image for this card
+            tryLoadAnyCachedImageForCard(entry.name)
         }
+    }
+    
+    private func tryLoadAnyCachedImageForCard(_ cardName: String) {
+        // For now, just return nil - this will show placeholder
+        // The real fix is to ensure availablePrintings gets populated quickly
+        // Once availablePrintings is loaded, the onChange handler will trigger loadImageForEntry again
+        imageData = nil
+        isLoadingImage = false
     }
     
     private func entryKey(for entry: DecklistEntryData) -> String {
@@ -394,10 +572,10 @@ struct GridCardView: View {
 
 #Preview {
     PrintSelectionView(
-        entries: [
+        entries: .constant([
             DecklistEntryData(multiple: 4, name: "Lightning Bolt", set: "lea", faceMode: .bothSides),
             DecklistEntryData(multiple: 1, name: "Counterspell", language: "ja", faceMode: .frontOnly)
-        ],
+        ]),
         onGeneratePDF: {}
     )
 }

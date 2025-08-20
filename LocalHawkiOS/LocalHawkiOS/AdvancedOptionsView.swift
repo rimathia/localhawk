@@ -35,6 +35,14 @@ struct AdvancedOptionsView: View {
                             action: clearImageCache
                         )
                         
+                        // Refresh button for debugging
+                        Button("Refresh Cache Stats") {
+                            loadCacheStatistics()
+                        }
+                        .padding()
+                        .background(Color.gray.opacity(0.2))
+                        .cornerRadius(8)
+                        
                         // Search Results Cache
                         CacheStatCard(
                             title: "Search Results Cache",
