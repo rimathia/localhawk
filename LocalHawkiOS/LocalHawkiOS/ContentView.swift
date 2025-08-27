@@ -19,8 +19,9 @@ struct ContentView: View {
     @State private var showingAdvancedOptions = false
     @State private var showingPrintSelection = false
     
-    // Print selection state
+    // Print selection state  
     @State private var decklistEntries: [DecklistEntryData] = []
+    @StateObject private var resolvedCardsWrapper = ResolvedCardsWrapper(cards: [])
     @State private var globalFaceMode: DoubleFaceMode = .bothSides
     
     // Background loading is now fire-and-forget, no state tracking needed
@@ -141,7 +142,7 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingPrintSelection) {
             PrintSelectionView(
-                entries: $decklistEntries,
+                resolvedCardsWrapper: resolvedCardsWrapper,
                 onGeneratePDF: generatePDFFromSelection
             )
         }
@@ -204,20 +205,22 @@ struct ContentView: View {
                 isGenerating = false
                 
                 switch result {
-                case .success(let entries):
+                case .success(let (entries, resolved)):
                     decklistEntries = entries
+                    resolvedCardsWrapper.cards = resolved
                     errorMessage = nil
                     showingPrintSelection = true
                     // Background loading is now started automatically by the core library
                 case .failure(let error):
                     decklistEntries = []
+                    resolvedCardsWrapper.cards = []
                     errorMessage = "Failed to parse decklist: \(error.localizedDescription)"
                 }
             }
         }
     }
     
-    /// Generate PDF from print selection (called from PrintSelectionView)
+    /// Generate PDF from decklist entries (called from PrintSelectionView)
     private func generatePDFFromSelection() {
         guard !decklistEntries.isEmpty else {
             errorMessage = "No entries to generate PDF from"

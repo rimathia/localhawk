@@ -5,7 +5,7 @@ use crate::{
 use directories::ProjectDirs;
 use std::collections::HashSet;
 use std::sync::{Arc, OnceLock, RwLock};
-use tracing::{debug, info};
+use tracing::{debug, info, error};
 
 // Memory size estimation constants for cache statistics
 
@@ -24,6 +24,46 @@ static CARD_NAME_CACHE_INFO: OnceLock<Arc<RwLock<Option<(time::OffsetDateTime, u
 
 pub fn get_scryfall_client() -> &'static ScryfallClient {
     SCRYFALL_CLIENT.get_or_init(|| ScryfallClient::new().expect("Failed to create ScryfallClient"))
+}
+
+/// iOS-specific sync initialization function
+/// Ensures all essential caches have data (may block on network for first run)
+#[cfg(feature = "ios")]
+pub fn initialize_caches_sync() -> Result<(), ProxyError> {
+    use crate::ios_api::ProxyGenerator;
+    
+    info!("Starting cache initialization (iOS sync version)");
+
+    // Initialize image cache (loads from disk if available)
+    let _image_cache = get_image_cache();
+    info!("Image cache initialized");
+
+    // Initialize search results cache (loads from disk if available)  
+    let _search_cache = get_search_results_cache();
+    info!("Search results cache initialized");
+
+    // Ensure card name lookup is available (essential for fuzzy matching)
+    // This will fetch from network if disk cache is missing/expired
+    match ProxyGenerator::ensure_card_lookup_initialized_sync() {
+        Ok(_) => info!("Card name lookup initialized"),
+        Err(e) => {
+            error!("Failed to initialize card name lookup: {:?}", e);
+            return Err(e);
+        }
+    }
+
+    // Ensure set codes are available (essential for decklist parsing)
+    // This will fetch from network if disk cache is missing/expired  
+    match ProxyGenerator::ensure_set_codes_initialized_sync() {
+        Ok(_) => info!("Set codes initialized"),
+        Err(e) => {
+            error!("Failed to initialize set codes: {:?}", e);
+            return Err(e);
+        }
+    }
+
+    info!("Cache initialization complete - all essential data available");
+    Ok(())
 }
 
 pub fn get_image_cache() -> &'static Arc<RwLock<LruImageCache>> {
@@ -75,7 +115,7 @@ pub async fn initialize_caches() -> Result<(), ProxyError> {
 }
 
 // Save all in-memory caches to disk (without shutdown)
-pub async fn save_caches() -> Result<(), ProxyError> {
+pub fn save_caches() -> Result<(), ProxyError> {
     info!("Saving all in-memory caches to disk");
 
     // Save image cache metadata
@@ -106,7 +146,7 @@ pub async fn shutdown_caches() -> Result<(), ProxyError> {
     info!("Saving all caches to disk before shutdown");
 
     // Reuse the save logic
-    save_caches().await?;
+    save_caches()?;
 
     info!("All caches saved to disk successfully");
     Ok(())

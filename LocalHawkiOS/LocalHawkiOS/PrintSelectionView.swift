@@ -1,20 +1,28 @@
 import SwiftUI
+import Combine
 
 struct PrintSelectionView: View {
-    @Binding var entries: [DecklistEntryData]
+    @ObservedObject var resolvedCardsWrapper: ResolvedCardsWrapper  // Wraps the array of ResolvedCard objects
     let onGeneratePDF: () -> Void
     
     @Environment(\.dismiss) private var dismiss
-    @State private var selectedPrintings: [String: Int] = [:] // entry ID -> selected printing index
-    @State private var availablePrintings: [String: [CardPrintingData]] = [:] // card name -> printings
+    @State private var availablePrintings: [String: [CardPrintingData]] = [:] // Only for print selection modal
     @State private var isLoadingPrintings = false
     @State private var errorMessage: String?
     @State private var showCardList = false
     
+    // Image cache notification state
+    @State private var imageCacheListenerID: UUID?
+    
+    // Convenience property to access the resolved cards
+    private var resolvedCards: [ResolvedCard] {
+        resolvedCardsWrapper.cards
+    }
+    
     var body: some View {
         NavigationView {
             VStack(spacing: 16) {
-                if entries.isEmpty {
+                if resolvedCardsWrapper.cards.isEmpty {
                     Text("No cards found in decklist")
                         .foregroundColor(.secondary)
                         .font(.subheadline)
@@ -25,9 +33,20 @@ struct PrintSelectionView: View {
                             .font(.title2)
                             .fontWeight(.semibold)
                         
-                        Text("\(entries.count) unique cards found")
+                        let totalCards = resolvedCards.reduce(0) { $0 + Int($1.quantity) }
+                        Text("\(resolvedCards.count) unique cards, \(totalCards) total")
                             .font(.caption)
                             .foregroundColor(.secondary)
+                        
+                        if isLoadingPrintings {
+                            HStack {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                Text("Loading available printings...")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
@@ -55,14 +74,12 @@ struct PrintSelectionView: View {
                         .padding(.horizontal)
                         
                         GridPreviewSection(
-                            entries: entries,
-                            selectedPrintings: selectedPrintings,
-                            availablePrintings: $availablePrintings,
+                            resolvedCards: resolvedCards,
                             currentPage: 0 // TODO: Add page navigation
                         )
                         .padding(.horizontal)
                         
-                        // Card Selection List (collapsible)
+                        // Card Selection List (collapsible) - matches desktop functionality
                         VStack(spacing: 8) {
                             HStack {
                                 Text("Card Selection")
@@ -81,15 +98,10 @@ struct PrintSelectionView: View {
                             if showCardList {
                                 ScrollView {
                                     LazyVStack(spacing: 12) {
-                                        ForEach(Array(entries.enumerated()), id: \.offset) { index, entry in
-                                            CardEntryRow(
-                                                entry: entry,
-                                                selectedPrintingIndex: selectedPrintings[entryKey(for: entry)] ?? 0,
-                                                availablePrintings: availablePrintings[entry.name] ?? [],
-                                                onPrintingSelected: { printingIndex in
-                                                    selectedPrintings[entryKey(for: entry)] = printingIndex
-                                                    applySelectedPrintingToEntry(entryIndex: index, printingIndex: printingIndex)
-                                                }
+                                        ForEach(Array(resolvedCards.enumerated()), id: \.offset) { index, resolvedCard in
+                                            ResolvedCardRow(
+                                                resolvedCard: resolvedCard,
+                                                availablePrintings: availablePrintings[resolvedCard.card.name] ?? []
                                             )
                                         }
                                     }
@@ -137,6 +149,10 @@ struct PrintSelectionView: View {
             }
             .onAppear {
                 loadAvailablePrintings()
+                self.startWatchingImageCache()
+            }
+            .onDisappear {
+                self.stopWatchingImageCache()
             }
         }
     }
@@ -151,12 +167,12 @@ struct PrintSelectionView: View {
     }
     
     private func loadAvailablePrintings() {
-        print("loadAvailablePrintings() called with \(entries.count) entries")
+        print("loadAvailablePrintings() called with \(resolvedCards.count) resolved cards")
         isLoadingPrintings = true
         errorMessage = nil
         
-        // Get unique card names from entries
-        let uniqueCardNames = Set(entries.map { $0.name })
+        // Get unique card names from resolved cards
+        let uniqueCardNames = Set(resolvedCards.map { $0.card.name })
         print("Unique card names: \(uniqueCardNames)")
         
         Task {
@@ -202,53 +218,9 @@ struct PrintSelectionView: View {
         }
     }
     
+    // Legacy function removed - desktop pattern doesn't need complex matching
     private func initializeSelectedPrintings() {
-        for entry in entries {
-            let key = entryKey(for: entry)
-            
-            // Skip if already selected
-            if selectedPrintings[key] != nil {
-                continue
-            }
-            
-            guard let printings = availablePrintings[entry.name], !printings.isEmpty else {
-                selectedPrintings[key] = 0 // Default to first if no printings found
-                continue
-            }
-            
-            // Find best match based on entry's set and language preferences
-            var bestIndex = 0
-            
-            // If entry has set preference, try to find matching set
-            if let preferredSet = entry.set {
-                for (index, printing) in printings.enumerated() {
-                    if printing.set.lowercased() == preferredSet.lowercased() {
-                        // If language also matches, this is perfect
-                        if let preferredLang = entry.language {
-                            if printing.language.lowercased() == preferredLang.lowercased() {
-                                bestIndex = index
-                                break
-                            }
-                        } else {
-                            // Set matches, language doesn't matter
-                            bestIndex = index
-                            break
-                        }
-                    }
-                }
-            }
-            // If entry has language preference but no set, try to find matching language
-            else if let preferredLang = entry.language {
-                for (index, printing) in printings.enumerated() {
-                    if printing.language.lowercased() == preferredLang.lowercased() {
-                        bestIndex = index
-                        break
-                    }
-                }
-            }
-            
-            selectedPrintings[key] = bestIndex
-        }
+        // No-op: Resolved cards are the source of truth, no matching needed
     }
     
     private func reloadGridImages() {
@@ -267,24 +239,73 @@ struct PrintSelectionView: View {
         }
     }
     
+    // Legacy function removed - desktop pattern modifies resolved cards directly
     private func applySelectedPrintingToEntry(entryIndex: Int, printingIndex: Int) {
-        guard entryIndex < entries.count else { return }
+        // No-op: Print selection modifies ResolvedCard.card directly
+    }
+    
+    // MARK: - Image Cache Notifications
+    
+    private func startWatchingImageCache() {
+        print("📡 [PrintSelectionView] Starting to watch image cache notifications")
         
-        let entry = entries[entryIndex]
-        guard let printings = availablePrintings[entry.name],
-              printingIndex < printings.count else { return }
+        imageCacheListenerID = ProxyGenerator.startWatchingImageCache { [self] notification in
+            self.handleImageCacheNotification(notification)
+        }
         
-        let selectedPrinting = printings[printingIndex]
+        print("📝 [PrintSelectionView] Image cache listener registered with ID: \(imageCacheListenerID?.uuidString ?? "nil")")
+    }
+    
+    private func stopWatchingImageCache() {
+        if let listenerID = imageCacheListenerID {
+            print("🛑 [PrintSelectionView] Stopping image cache watching for ID: \(listenerID)")
+            ProxyGenerator.stopWatchingImageCache(listenerID: listenerID)
+            imageCacheListenerID = nil
+        }
+    }
+    
+    private func handleImageCacheNotification(_ notification: ImageCacheChangeNotification) {
+        print("🖼️ [PrintSelectionView] Received image cache notification: \(notification.changeType == 1 ? "CACHED" : "REMOVED") - \(notification.imageUrl)")
         
-        // Update the entry with the selected printing's set and language
-        entries[entryIndex] = DecklistEntryData(
-            multiple: entry.multiple,
-            name: entry.name,
-            set: selectedPrinting.set,
-            language: selectedPrinting.language,
-            faceMode: entry.faceMode,
-            sourceLineNumber: entry.sourceLineNumber
-        )
+        // Only process ImageCached notifications (type 1)
+        guard notification.changeType == 1 else { return }
+        
+        print("✅ [PrintSelectionView] Image cached: \(notification.imageUrl)")
+        
+        // Smart approach: find which specific cards use this URL and refresh only those
+        refreshCardsUsingImageURL(notification.imageUrl)
+    }
+    
+    private func refreshCardsUsingImageURL(_ cachedURL: String) {
+        // Check which ResolvedCard objects use this specific URL (desktop pattern)
+        var affectedCardNames: Set<String> = []
+        
+        for resolvedCard in resolvedCards {
+            let imageUrls = resolvedCard.getImageUrls()
+            if imageUrls.contains(cachedURL) {
+                affectedCardNames.insert(resolvedCard.card.name)
+                print("🎯 [PrintSelectionView] Found cached image for resolved card: \(resolvedCard.card.name)")
+            }
+        }
+        
+        guard !affectedCardNames.isEmpty else {
+            print("ℹ️ [PrintSelectionView] Cached URL not found in any available printings: \(cachedURL)")
+            return
+        }
+        
+        print("🔄 [PrintSelectionView] Triggering targeted refresh for \(affectedCardNames.count) affected cards")
+        
+        // Trigger SwiftUI refresh for affected ResolvedCard objects (desktop pattern)
+        for resolvedCard in resolvedCards {
+            if affectedCardNames.contains(resolvedCard.card.name) {
+                print("🔄 [PrintSelectionView] Refreshing UI for resolved card: \(resolvedCard.card.name)")
+                // Force SwiftUI to re-evaluate this ResolvedCard's views
+                resolvedCard.objectWillChange.send()
+            }
+        }
+        
+        // Also send a NotificationCenter notification as backup
+        NotificationCenter.default.post(name: Notification.Name("ImageCacheUpdated"), object: nil)
     }
     
 }
@@ -374,9 +395,7 @@ struct CardEntryRow: View {
 // MARK: - Grid Preview Section
 
 struct GridPreviewSection: View {
-    let entries: [DecklistEntryData]
-    let selectedPrintings: [String: Int]
-    @Binding var availablePrintings: [String: [CardPrintingData]]
+    let resolvedCards: [ResolvedCard]
     let currentPage: Int
     
     private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 3)
@@ -388,9 +407,7 @@ struct GridPreviewSection: View {
             LazyVGrid(columns: gridColumns, spacing: 4) {
                 ForEach(0..<cardsPerPage, id: \.self) { index in
                     GridCardView(
-                        entry: getEntryForGridPosition(index),
-                        selectedPrintings: selectedPrintings,
-                        availablePrintings: $availablePrintings
+                        resolvedCard: getResolvedCardForGridPosition(index)
                     )
                     .aspectRatio(480.0/680.0, contentMode: .fit) // Magic card aspect ratio
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -410,24 +427,26 @@ struct GridPreviewSection: View {
         }
     }
     
+    // Legacy function - not needed with ResolvedCard architecture
     private func getEntryForGridPosition(_ position: Int) -> DecklistEntryData? {
-        // For now, just cycle through entries to fill the grid
-        // TODO: Implement proper page logic that accounts for multiple copies
-        let expandedEntries = entries.flatMap { entry in
-            Array(repeating: entry, count: Int(entry.multiple))
+        return nil // No longer used with ResolvedCard architecture
+    }
+    
+    private func getResolvedCardForGridPosition(_ position: Int) -> ResolvedCard? {
+        // Expand resolved cards based on quantity (e.g., 4x Lightning Bolt = 4 grid positions)
+        let expandedCards = resolvedCards.flatMap { resolvedCard in
+            Array(repeating: resolvedCard, count: Int(resolvedCard.quantity))
         }
         
         let startIndex = currentPage * cardsPerPage
         let targetIndex = startIndex + position
         
-        return targetIndex < expandedEntries.count ? expandedEntries[targetIndex] : nil
+        return targetIndex < expandedCards.count ? expandedCards[targetIndex] : nil
     }
 }
 
 struct GridCardView: View {
-    let entry: DecklistEntryData?
-    let selectedPrintings: [String: Int]
-    @Binding var availablePrintings: [String: [CardPrintingData]]
+    let resolvedCard: ResolvedCard?  // The resolved card to display
     
     @State private var imageData: Data?
     @State private var isLoadingImage = false
@@ -442,7 +461,7 @@ struct GridCardView: View {
                         .stroke(Color(UIColor.separator), lineWidth: 1)
                 )
             
-            if let entry = entry {
+            if let resolvedCard = resolvedCard {
                 if let imageData = imageData, let uiImage = UIImage(data: imageData) {
                     // Show cached image
                     Image(uiImage: uiImage)
@@ -465,18 +484,16 @@ struct GridCardView: View {
                             .foregroundColor(.secondary)
                             .font(.title3)
                         
-                        Text(entry.name)
+                        Text(resolvedCard.card.name)
                             .font(.caption2)
                             .multilineTextAlignment(.center)
                             .foregroundColor(.primary)
                             .lineLimit(3)
                             .padding(.horizontal, 4)
                         
-                        if let set = entry.set {
-                            Text("[\(set.uppercased())]")
-                                .font(.caption2)
-                                .foregroundColor(.blue)
-                        }
+                        Text("[\(resolvedCard.card.set.uppercased())]")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
                     }
                 }
             } else {
@@ -486,70 +503,57 @@ struct GridCardView: View {
             }
         }
         .onAppear {
-            if let entry = entry {
-                print("GridCardView onAppear for: \(entry.name)")
-                loadImageForEntry(entry)
+            if let resolvedCard = resolvedCard {
+                print("GridCardView onAppear for: \(resolvedCard.card.name)")
+                loadImageForResolvedCard(resolvedCard)
             } else {
-                print("GridCardView onAppear with nil entry")
+                print("GridCardView onAppear with nil resolved card")
             }
         }
-        .onChange(of: selectedPrintings) { _ in
-            if let entry = entry {
-                loadImageForEntry(entry)
+        .onChange(of: resolvedCard?.card) { _ in
+            if let resolvedCard = resolvedCard {
+                loadImageForResolvedCard(resolvedCard)
             }
         }
-        .onChange(of: availablePrintings) { _ in
-            if let entry = entry {
-                loadImageForEntry(entry)
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("ImageCacheUpdated"))) { _ in
+            if let resolvedCard = resolvedCard {
+                print("🔄 [GridCardView] Manual refresh notification received for: \(resolvedCard.card.name)")
+                loadImageForResolvedCard(resolvedCard)
             }
         }
     }
     
-    private func loadImageForEntry(_ entry: DecklistEntryData) {
-        // Get the selected printing for this entry
-        let entryKey = entryKey(for: entry)
-        let selectedIndex = selectedPrintings[entryKey] ?? 0
+    private func loadImageForResolvedCard(_ resolvedCard: ResolvedCard) {
+        print("Loading image for resolved card: \(resolvedCard.card.name)")
         
-        print("Loading image for entry: \(entry.name)")
-        print("Available printings count: \(availablePrintings[entry.name]?.count ?? 0)")
-        print("Selected index: \(selectedIndex)")
-        
-        guard let printings = availablePrintings[entry.name],
-              !printings.isEmpty else {
-            print("No printings available yet for \(entry.name)")
-            // No printings available yet - check if any image for this card is cached
-            tryLoadAnyCachedImageForCard(entry.name)
+        // Get the primary image URL for this resolved card based on face mode
+        let imageUrls = resolvedCard.getImageUrls()
+        guard let primaryImageURL = imageUrls.first else {
+            print("No image URL available for resolved card: \(resolvedCard.card.name)")
             return
         }
-        
-        guard selectedIndex < printings.count else {
-            imageData = nil
-            return
-        }
-        
-        let selectedPrinting = printings[selectedIndex]
-        let imageURL = selectedPrinting.borderCropURL
         
         // Check if image is already cached
-        if ProxyGenerator.isImageCached(for: imageURL) {
-            // Load from cache
-            switch ProxyGenerator.getCachedImageData(for: imageURL) {
-            case .success(let data):
-                imageData = data
-                isLoadingImage = false
-            case .failure(.imageNotCached):
-                // Image was cached but now isn't - this shouldn't happen but handle gracefully
-                imageData = nil
-                isLoadingImage = false
-            case .failure:
-                // Other error - show placeholder
-                imageData = nil
-                isLoadingImage = false
-            }
-        } else {
-            // Selected printing not cached - try any cached image for this card
-            tryLoadAnyCachedImageForCard(entry.name)
+        guard ProxyGenerator.initialize() else {
+            print("Failed to initialize ProxyGenerator for image loading")
+            return
         }
+        
+        switch ProxyGenerator.getCachedImageData(for: primaryImageURL) {
+        case .success(let data):
+            print("✅ [GridCardView] Using cached image for: \(resolvedCard.card.name)")
+            imageData = data
+            isLoadingImage = false
+        case .failure:
+            print("🔍 [GridCardView] Image not cached yet for URL: \(primaryImageURL)")
+            imageData = nil
+            isLoadingImage = true
+        }
+    }
+    
+    // Legacy function - no longer used with ResolvedCard architecture
+    private func loadImageForEntry(_ entry: DecklistEntryData) {
+        // No-op: ResolvedCard architecture uses loadImageForResolvedCard instead
     }
     
     private func tryLoadAnyCachedImageForCard(_ cardName: String) {
@@ -570,12 +574,44 @@ struct GridCardView: View {
     }
 }
 
+// MARK: - ResolvedCardRow (Desktop Pattern)
+
+struct ResolvedCardRow: View {
+    @ObservedObject var resolvedCard: ResolvedCard
+    let availablePrintings: [CardPrintingData]
+    
+    var body: some View {
+        HStack {
+            // Card info
+            VStack(alignment: .leading, spacing: 4) {
+                Text(resolvedCard.card.name)
+                    .font(.headline)
+                
+                Text("\(resolvedCard.quantity)x • \(resolvedCard.card.set.uppercased()) • \(resolvedCard.faceMode.displayName)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            
+            Spacer()
+            
+            // Print selection button (if alternatives exist)
+            if availablePrintings.count > 1 {
+                Button("Change Print") {
+                    // TODO: Show print selection modal that modifies resolvedCard.card directly
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(Color(UIColor.secondarySystemBackground))
+        .cornerRadius(8)
+    }
+}
+
 #Preview {
     PrintSelectionView(
-        entries: .constant([
-            DecklistEntryData(multiple: 4, name: "Lightning Bolt", set: "lea", faceMode: .bothSides),
-            DecklistEntryData(multiple: 1, name: "Counterspell", language: "ja", faceMode: .frontOnly)
-        ]),
+        resolvedCardsWrapper: ResolvedCardsWrapper(cards: []),
         onGeneratePDF: {}
     )
 }

@@ -367,23 +367,94 @@ int32_t localhawk_is_image_cached(const char* image_url_cstr);
 //==============================================================================
 
 /**
- * Parse decklist and start background image loading (fire and forget).
- * This function parses the decklist, starts background loading, and returns immediately.
- * Background image loading happens asynchronously without tracking.
+ * DoubleFaceMode enum for resolved cards
+ */
+typedef enum {
+    LOCALHAWK_FACE_MODE_FRONT_ONLY = 0,
+    LOCALHAWK_FACE_MODE_BACK_ONLY = 1,
+    LOCALHAWK_FACE_MODE_BOTH_SIDES = 2
+} LocalHawkDoubleFaceMode;
+
+/**
+ * C-compatible resolved card structure
+ */
+typedef struct {
+    char* name;                     // Card name
+    char* set_code;                 // Set code
+    char* language;                 // Language code
+    char* border_crop_url;          // Front face image URL
+    char* back_border_crop_url;     // Back face image URL (NULL if no back side)
+    uint32_t quantity;              // Number of copies
+    LocalHawkDoubleFaceMode face_mode; // Face mode for this card
+} LocalHawkResolvedCard;
+
+/**
+ * C-compatible array of resolved cards
+ */
+typedef struct {
+    LocalHawkResolvedCard* cards;   // Array of resolved cards
+    size_t count;                   // Number of cards in array
+} LocalHawkResolvedCardArray;
+
+/**
+ * Parse decklist, resolve to cards, and start background loading.
+ * This function follows the desktop pattern exactly: parse → resolve → return both.
+ * iOS UI should use the entries for selection and resolved cards to find default selections.
  * 
  * @param decklist_cstr Null-terminated C string containing the decklist
  * @param global_face_mode Global face mode: 0=FrontOnly, 1=BackOnly, 2=BothSides
+ * @param entries_out Pointer to decklist entries array pointer (allocated by function)
+ * @param entries_count_out Pointer to receive number of entries
  * @return LOCALHAWK_SUCCESS on success, negative error code on failure
  * 
  * Memory Management:
- * - No memory is allocated by this function
- * - No cleanup required
+ * - The output array and all strings are allocated by this function
+ * - Caller must call localhawk_free_decklist_entries to free the memory
+ * - If function fails, no memory is allocated
  * - Background loading happens asynchronously after function returns
  */
 int32_t localhawk_parse_and_start_background_loading(
     const char* decklist_cstr,
-    int32_t global_face_mode
+    int32_t global_face_mode,
+    DecklistEntry** entries_out,
+    size_t* entries_count_out
 );
+
+/**
+ * Get resolved cards for default selection mapping (matches desktop pattern exactly).
+ * This function resolves the entries to the cards that the core library would select,
+ * allowing iOS UI to determine the correct default printing selections.
+ * 
+ * @param entries Pointer to decklist entries array
+ * @param entries_count Number of entries in the array
+ * @param resolved_cards_out Pointer to resolved cards array pointer (allocated by function)
+ * @param resolved_cards_count_out Pointer to receive number of resolved cards
+ * @return LOCALHAWK_SUCCESS on success, negative error code on failure
+ * 
+ * Memory Management:
+ * - The output array and all strings are allocated by this function
+ * - Caller must call localhawk_free_resolved_cards to free the memory
+ * - If function fails, no memory is allocated
+ */
+int32_t localhawk_get_resolved_cards_for_entries(
+    const DecklistEntry* entries,
+    size_t entries_count,
+    LocalHawkResolvedCard** resolved_cards_out,
+    size_t* resolved_cards_count_out
+);
+
+/**
+ * Free resolved cards array allocated by localhawk_get_resolved_cards_for_entries.
+ * 
+ * @param resolved_cards Pointer to resolved cards array
+ * @param count Number of resolved cards in the array
+ * 
+ * Memory Management:
+ * - This function must be called to free arrays from localhawk_get_resolved_cards_for_entries
+ * - Safe to call with NULL pointer (no-op)
+ * - Frees the array and all contained strings
+ */
+void localhawk_free_resolved_cards(LocalHawkResolvedCard* resolved_cards, size_t count);
 
 /**
  * Loading phase enum for background loading progress
@@ -474,6 +545,84 @@ int32_t localhawk_cancel_background_loading(BackgroundLoadHandleId handle_id);
  * - Finished tasks are automatically cleaned up
  */
 int32_t localhawk_is_background_loading_finished(BackgroundLoadHandleId handle_id);
+
+//==============================================================================
+// Image Cache Notification System
+//==============================================================================
+
+/**
+ * Function pointer type for dispatch source notification callbacks
+ * @param source_ptr Opaque pointer to the dispatch source
+ * @param key_cstr Null-terminated C string key (usually "__GLOBAL_IMAGE_CACHE__")
+ */
+typedef void (*LocalHawkDispatchNotifyFn)(const void* source_ptr, const char* key_cstr);
+
+/**
+ * Image cache change notification structure
+ */
+typedef struct {
+    uint8_t change_type;    // 1=ImageCached, 2=ImageRemoved
+    char* image_url;        // Null-terminated C string (caller must free)
+    uint64_t timestamp;     // Unix timestamp in milliseconds
+} LocalHawkImageCacheNotification;
+
+/**
+ * Array of image cache change notifications
+ */
+typedef struct {
+    LocalHawkImageCacheNotification* changes;
+    size_t count;
+} LocalHawkImageCacheChangeArray;
+
+/**
+ * Register a global dispatch source for image cache change notifications.
+ * 
+ * @param source_ptr Opaque pointer to the dispatch source
+ * @param notify_fn Callback function to trigger dispatch source
+ * @return LOCALHAWK_SUCCESS on success, negative error code on failure
+ * 
+ * Memory Management:
+ * - No memory is allocated by this function
+ * - Caller retains ownership of source_ptr
+ */
+int32_t localhawk_register_image_cache_dispatch_source(
+    const void* source_ptr,
+    LocalHawkDispatchNotifyFn notify_fn
+);
+
+/**
+ * Unregister the global image cache dispatch source.
+ * 
+ * @return LOCALHAWK_SUCCESS on success, negative error code on failure
+ * 
+ * Memory Management:
+ * - No memory is allocated by this function
+ */
+int32_t localhawk_unregister_image_cache_dispatch_source(void);
+
+/**
+ * Get queued image cache change notifications.
+ * Returns batched notifications since last call.
+ * 
+ * @return Pointer to LocalHawkImageCacheChangeArray, or NULL if no changes
+ * 
+ * Memory Management:
+ * - Memory is allocated by this function using malloc
+ * - Caller must call localhawk_free_image_cache_change_array to free
+ * - If function returns NULL, no memory was allocated
+ */
+LocalHawkImageCacheChangeArray* localhawk_get_queued_image_cache_changes(void);
+
+/**
+ * Free memory allocated by localhawk_get_queued_image_cache_changes.
+ * 
+ * @param array_ptr Pointer returned by localhawk_get_queued_image_cache_changes
+ * 
+ * Memory Management:
+ * - Frees all memory associated with the array including strings
+ * - Safe to call with NULL pointer
+ */
+void localhawk_free_image_cache_change_array(LocalHawkImageCacheChangeArray* array_ptr);
 
 #ifdef __cplusplus
 }

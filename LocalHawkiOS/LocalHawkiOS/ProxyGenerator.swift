@@ -64,6 +64,68 @@ struct CardSearchResultData {
     }
 }
 
+/// Mutable resolved card that matches desktop pattern exactly
+/// This represents a (Card, quantity, face_mode) tuple that can be modified by print selection
+class ResolvedCard: ObservableObject {
+    @Published var card: CardPrintingData  // The selected card (can be changed by print selection)
+    let quantity: UInt32                   // Number of copies  
+    let faceMode: DoubleFaceMode          // Face mode for this entry
+    
+    init(card: CardPrintingData, quantity: UInt32, faceMode: DoubleFaceMode) {
+        self.card = card
+        self.quantity = quantity
+        self.faceMode = faceMode
+    }
+    
+    /// Get image URLs based on face mode (matches core library logic)
+    func getImageUrls() -> [String] {
+        switch faceMode {
+        case .frontOnly:
+            return [card.borderCropURL]
+        case .backOnly:
+            return card.backSideURL.map { [$0] } ?? [card.borderCropURL]
+        case .bothSides:
+            if let backURL = card.backSideURL {
+                return [card.borderCropURL, backURL]
+            } else {
+                return [card.borderCropURL]
+            }
+        }
+    }
+}
+
+/// Wrapper to make the resolved cards array observable
+class ResolvedCardsWrapper: ObservableObject {
+    @Published var cards: [ResolvedCard]
+    
+    init(cards: [ResolvedCard]) {
+        self.cards = cards
+    }
+}
+
+/// Legacy structure - keeping for compatibility during transition
+/// Contains the actual selected card and quantity information  
+struct ResolvedCardData: Equatable {
+    let name: String
+    let setCode: String
+    let language: String
+    let borderCropURL: String
+    let backBorderCropURL: String?
+    let quantity: UInt32
+    let faceMode: DoubleFaceMode
+    
+    init(name: String, setCode: String, language: String, borderCropURL: String, 
+         backBorderCropURL: String? = nil, quantity: UInt32, faceMode: DoubleFaceMode) {
+        self.name = name
+        self.setCode = setCode
+        self.language = language
+        self.borderCropURL = borderCropURL
+        self.backBorderCropURL = backBorderCropURL
+        self.quantity = quantity
+        self.faceMode = faceMode
+    }
+}
+
 enum ProxyGeneratorError: Error, LocalizedError {
     case initializationFailed
     case nullPointer
@@ -99,6 +161,15 @@ enum ProxyGeneratorError: Error, LocalizedError {
     }
 }
 
+// MARK: - Image Cache Notifications
+
+/// Image cache change notification from Rust
+struct ImageCacheChangeNotification {
+    let changeType: UInt8 // 1=ImageCached, 2=ImageRemoved
+    let imageUrl: String
+    let timestamp: UInt64
+}
+
 class ProxyGenerator {
     private static var isInitialized = false
     
@@ -106,13 +177,19 @@ class ProxyGenerator {
     /// Must be called before any other operations
     @discardableResult
     static func initialize() -> Bool {
-        guard !isInitialized else { return true }
+        guard !isInitialized else { 
+            print("🟢 [ProxyGenerator] Already initialized")
+            return true 
+        }
         
+        print("🚀 [ProxyGenerator] Starting initialization...")
         let result = localhawk_initialize()
         isInitialized = (result == 0)
         
-        if !isInitialized {
-            print("ProxyGenerator initialization failed with code: \(result)")
+        if isInitialized {
+            print("✅ [ProxyGenerator] Initialization successful")
+        } else {
+            print("❌ [ProxyGenerator] Initialization failed with code: \(result)")
         }
         
         return isInitialized
@@ -123,22 +200,164 @@ class ProxyGenerator {
         return localhawk_test_connection()
     }
     
+    // MARK: - Image Cache Dispatch Source Notifications
+    
+    private static var globalImageCacheDispatchSource: DispatchSourceUserDataAdd?
+    private static var imageCacheListeners: [UUID: (ImageCacheChangeNotification) -> Void] = [:]
+    
+    /// C callback function for image cache dispatch source notifications
+    private static let imageCacheNotificationCallback: @convention(c) (UnsafeRawPointer?, UnsafePointer<CChar>?) -> Void = { sourcePtr, keyCStr in
+        guard let sourcePtr = sourcePtr, let keyCStr = keyCStr else {
+            print("⚠️ [ProxyGenerator] Image cache dispatch callback received null pointer")
+            return
+        }
+        
+        let key = String(cString: keyCStr)
+        print("📲 [ProxyGenerator] Image cache dispatch source notification for key: '\(key)'")
+        
+        // Convert the source pointer back to the dispatch source and trigger it
+        let source = Unmanaged<DispatchSourceUserDataAdd>.fromOpaque(sourcePtr).takeUnretainedValue()
+        
+        // Trigger the dispatch source by merging data
+        source.add(data: 1)
+        
+        print("🔔 [ProxyGenerator] Triggered image cache dispatch source for key: '\(key)'")
+    }
+    
+    /// Get queued image cache change notifications from Rust
+    private static func getQueuedImageCacheChanges() -> [ImageCacheChangeNotification] {
+        guard let cArrayPtr = localhawk_get_queued_image_cache_changes() else {
+            return []
+        }
+        
+        let cArray = cArrayPtr.pointee
+        var changes: [ImageCacheChangeNotification] = []
+        
+        for i in 0..<Int(cArray.count) {
+            let cChange = cArray.changes.advanced(by: i).pointee
+            
+            let imageUrl = String(cString: cChange.image_url)
+            
+            let change = ImageCacheChangeNotification(
+                changeType: cChange.change_type,
+                imageUrl: imageUrl,
+                timestamp: cChange.timestamp
+            )
+            changes.append(change)
+        }
+        
+        // Free the allocated memory
+        localhawk_free_image_cache_change_array(cArrayPtr)
+        
+        return changes
+    }
+    
+    /// Register for image cache change notifications
+    /// Returns a listener UUID that can be used to unregister specifically
+    @discardableResult
+    static func startWatchingImageCache(callback: @escaping (ImageCacheChangeNotification) -> Void) -> UUID {
+        guard initialize() else { 
+            print("❌ [ProxyGenerator] Failed to initialize for image cache watching")
+            return UUID() // Return dummy UUID on failure
+        }
+        
+        let listenerID = UUID()
+        print("📡 [ProxyGenerator] Starting to watch image cache with ID \(listenerID)")
+        
+        // Create global dispatch source only on first registration
+        if globalImageCacheDispatchSource == nil {
+            let source = DispatchSource.makeUserDataAddSource(queue: DispatchQueue.main)
+            
+            source.setEventHandler {
+                print("🔔 [ProxyGenerator] Global image cache dispatch source fired")
+                
+                // Get all queued image cache change notifications
+                let changes = getQueuedImageCacheChanges()
+                print("📥 [ProxyGenerator] Processing \(changes.count) image cache change notifications")
+                
+                // Notify all listeners
+                for change in changes {
+                    print("🖼️ [ProxyGenerator] Image cache change: \(change.changeType == 1 ? "CACHED" : "REMOVED") - \(change.imageUrl)")
+                    for (_, callback) in imageCacheListeners {
+                        callback(change)
+                    }
+                }
+            }
+            
+            source.resume()
+            globalImageCacheDispatchSource = source
+            
+            // Register with Rust
+            let sourcePtr = Unmanaged.passUnretained(source).toOpaque()
+            let result = localhawk_register_image_cache_dispatch_source(sourcePtr, imageCacheNotificationCallback)
+            
+            if result != 0 {
+                print("❌ [ProxyGenerator] Failed to register image cache dispatch source: \(result)")
+                source.cancel()
+                globalImageCacheDispatchSource = nil
+                return UUID() // Return dummy UUID on failure
+            }
+            
+            print("✅ [ProxyGenerator] Registered image cache dispatch source with Rust")
+        }
+        
+        // Add callback to listeners with UUID key
+        imageCacheListeners[listenerID] = callback
+        print("📝 [ProxyGenerator] Added image cache listener \(listenerID). Total listeners: \(imageCacheListeners.count)")
+        return listenerID
+    }
+    
+    /// Stop watching image cache changes for a specific listener
+    static func stopWatchingImageCache(listenerID: UUID) {
+        print("🛑 [ProxyGenerator] Stopping image cache watching for ID \(listenerID)")
+        
+        // Remove specific listener
+        imageCacheListeners.removeValue(forKey: listenerID)
+        print("📝 [ProxyGenerator] Removed image cache listener \(listenerID). Remaining listeners: \(imageCacheListeners.count)")
+        
+        // Only unregister and cancel dispatch source when no more listeners
+        if imageCacheListeners.isEmpty {
+            if let source = globalImageCacheDispatchSource {
+                source.cancel()
+                globalImageCacheDispatchSource = nil
+                
+                // Unregister from Rust
+                let result = localhawk_unregister_image_cache_dispatch_source()
+                if result != 0 {
+                    print("⚠️ [ProxyGenerator] Failed to unregister image cache dispatch source: \(result)")
+                } else {
+                    print("✅ [ProxyGenerator] Unregistered image cache dispatch source from Rust")
+                }
+            }
+        } else {
+            print("📝 [ProxyGenerator] Keeping image cache dispatch source active (still have \(imageCacheListeners.count) listeners)")
+        }
+    }
+    
     /// Generate PDF from decklist text
     /// - Parameter decklist: The decklist text containing card names
     /// - Returns: Result containing PDF data or error
     static func generatePDF(from decklist: String) -> Result<Data, ProxyGeneratorError> {
+        print("🔄 [ProxyGenerator] Starting PDF generation from decklist...")
+        
         // Ensure initialization
         guard initialize() else {
+            print("❌ [ProxyGenerator] PDF generation failed - initialization failed")
             return .failure(.initializationFailed)
         }
         
+        print("📝 [ProxyGenerator] Processing decklist with \(decklist.split(separator: "\n").count) lines")
+        
         // Convert Swift string to C string
         guard let decklistCString = decklist.cString(using: .utf8) else {
+            print("❌ [ProxyGenerator] PDF generation failed - invalid input encoding")
             return .failure(.invalidInput)
         }
         
         var buffer: UnsafeMutablePointer<UInt8>?
         var size: Int = 0
+        
+        print("🚀 [ProxyGenerator] Calling Rust core for PDF generation...")
         
         // Call the FFI function
         let result = localhawk_generate_pdf_from_decklist(
@@ -149,13 +368,17 @@ class ProxyGenerator {
         
         // Check for errors
         guard result == 0 else {
+            print("❌ [ProxyGenerator] PDF generation failed with code: \(result)")
             return .failure(convertErrorCode(result))
         }
         
         // Ensure we got valid data
         guard let buffer = buffer, size > 0 else {
+            print("❌ [ProxyGenerator] PDF generation failed - invalid buffer or size")
             return .failure(.pdfGenerationFailed)
         }
+        
+        print("📄 [ProxyGenerator] PDF generated successfully - size: \(size) bytes")
         
         // Ensure buffer is freed regardless of how this scope exits
         defer { localhawk_free_buffer(buffer) }
@@ -163,6 +386,7 @@ class ProxyGenerator {
         // Create Data object from the buffer
         let data = Data(bytes: buffer, count: size)
         
+        print("✅ [ProxyGenerator] PDF data created and ready for use")
         return .success(data)
     }
     
@@ -218,28 +442,37 @@ class ProxyGenerator {
     
     /// Clear image cache
     static func clearImageCache() -> Result<Void, ProxyGeneratorError> {
+        print("🗑️ [ProxyGenerator] Clearing image cache...")
         let result = localhawk_clear_image_cache()
         guard result == 0 else {
+            print("❌ [ProxyGenerator] Failed to clear image cache with code: \(result)")
             return .failure(convertErrorCode(result))
         }
+        print("✅ [ProxyGenerator] Image cache cleared successfully")
         return .success(())
     }
     
     /// Update card names database from Scryfall API
     static func updateCardNames() -> Result<Void, ProxyGeneratorError> {
+        print("🔄 [ProxyGenerator] Updating card names database from Scryfall API...")
         let result = localhawk_update_card_names()
         guard result == 0 else {
+            print("❌ [ProxyGenerator] Failed to update card names with code: \(result)")
             return .failure(convertErrorCode(result))
         }
+        print("✅ [ProxyGenerator] Card names database updated successfully")
         return .success(())
     }
     
     /// Save all in-memory caches to disk
     static func saveCaches() -> Result<Void, ProxyGeneratorError> {
+        print("💾 [ProxyGenerator] Saving caches to disk...")
         let result = localhawk_save_caches()
         guard result == 0 else {
+            print("❌ [ProxyGenerator] Failed to save caches with code: \(result)")
             return .failure(convertErrorCode(result))
         }
+        print("✅ [ProxyGenerator] Caches saved to disk successfully")
         return .success(())
     }
     
@@ -274,40 +507,168 @@ class ProxyGenerator {
     
     // MARK: - Print Selection Functions
     
-    /// Parse decklist and start background image loading (fire and forget)
-    /// This function parses the decklist, starts background loading, and returns immediately
+    /// Parse decklist and start background loading
+    /// This function follows the desktop pattern: parse → resolve → auto-start background loading
     /// - Parameters:
     ///   - decklist: The decklist text containing card names
     ///   - globalFaceMode: Global face mode setting
-    /// - Returns: Result containing array of decklist entries or error
+    /// - Returns: Result containing tuple of (entries, resolved cards) or error  
     static func parseAndStartBackgroundLoading(
         _ decklist: String,
         globalFaceMode: DoubleFaceMode = .bothSides
-    ) -> Result<[DecklistEntryData], ProxyGeneratorError> {
+    ) -> Result<([DecklistEntryData], [ResolvedCard]), ProxyGeneratorError> {
+        print("🔍 [ProxyGenerator] Parsing decklist, resolving cards, and starting background loading...")
+        print("📝 [ProxyGenerator] Decklist has \(decklist.split(separator: "\n").count) lines, face mode: \(globalFaceMode.displayName)")
+        
         // Ensure initialization
         guard initialize() else {
+            print("❌ [ProxyGenerator] Parse failed - initialization failed")
             return .failure(.initializationFailed)
         }
         
         // Convert Swift string to C string
         guard let decklistCString = decklist.cString(using: .utf8) else {
+            print("❌ [ProxyGenerator] Parse failed - invalid input encoding")
             return .failure(.invalidInput)
         }
         
-        // Call the simple FFI function
+        print("🚀 [ProxyGenerator] Calling Rust core for parsing and background loading...")
+        
+        // Prepare output pointers
+        var entriesPtr: UnsafeMutablePointer<DecklistEntry>?
+        var entriesCount: size_t = 0
+        
+        // Call the FFI function that returns decklist entries and starts background loading
         let result = localhawk_parse_and_start_background_loading(
             decklistCString,
-            globalFaceMode.rawValue
+            globalFaceMode.rawValue,
+            &entriesPtr,
+            &entriesCount
         )
         
         // Check for errors
         guard result == 0 else {
+            print("❌ [ProxyGenerator] Parse and background loading failed with code: \(result)")
             return .failure(convertErrorCode(result))
         }
         
-        // For now, we'll still call the separate parse function to get the entries
-        // In the future, we could modify the FFI to return the parsed entries
-        return parseAndResolveDecklist(decklist, globalFaceMode: globalFaceMode)
+        // Ensure we got entries
+        guard let entriesArray = entriesPtr, entriesCount > 0 else {
+            print("✅ [ProxyGenerator] No entries parsed from decklist")
+            return .success(([], []))
+        }
+        
+        print("✅ [ProxyGenerator] Got \(entriesCount) entries from Rust core")
+        
+        // Convert C array to Swift array
+        var entries: [DecklistEntryData] = []
+        
+        for i in 0..<entriesCount {
+            let cEntry = entriesArray.advanced(by: i).pointee
+            
+            // Convert C strings to Swift strings
+            let name = String(cString: cEntry.name)
+            let set = cEntry.set != nil ? String(cString: cEntry.set) : nil
+            let language = cEntry.language != nil ? String(cString: cEntry.language) : nil
+            
+            // Convert face mode
+            let faceMode: DoubleFaceMode
+            switch cEntry.face_mode {
+            case 0:
+                faceMode = .frontOnly
+            case 1:
+                faceMode = .backOnly
+            case 2:
+                faceMode = .bothSides
+            default:
+                faceMode = .bothSides
+            }
+            
+            let entry = DecklistEntryData(
+                multiple: Int32(cEntry.multiple),
+                name: name,
+                set: set,
+                language: language,
+                faceMode: faceMode,
+                sourceLineNumber: Int32(cEntry.source_line_number)
+            )
+            
+            entries.append(entry)
+            
+            let setStr = set ?? "any"
+            let langStr = language ?? "any"
+            print("📝 [ProxyGenerator] Entry: '\(name)' (\(setStr)) [\(langStr)] x\(cEntry.multiple) - \(faceMode.displayName)")
+        }
+        
+        // Now get the resolved cards using the new FFI function
+        var resolvedCardsPtr: UnsafeMutablePointer<LocalHawkResolvedCard>?
+        var resolvedCardsCount: size_t = 0
+        
+        let resolveResult = localhawk_get_resolved_cards_for_entries(
+            entriesArray,
+            entriesCount,
+            &resolvedCardsPtr,
+            &resolvedCardsCount
+        )
+        
+        // Free the entries memory first
+        localhawk_free_decklist_entries(entriesPtr, entriesCount)
+        
+        // Check resolve result
+        guard resolveResult == 0 else {
+            print("❌ [ProxyGenerator] Failed to get resolved cards with code: \(resolveResult)")
+            return .failure(convertErrorCode(resolveResult))
+        }
+        
+        // Convert resolved cards to Swift
+        var resolvedCards: [ResolvedCard] = []
+        if let resolvedCardsArray = resolvedCardsPtr, resolvedCardsCount > 0 {
+            for i in 0..<resolvedCardsCount {
+                let cCard = resolvedCardsArray.advanced(by: i).pointee
+                
+                let name = String(cString: cCard.name)
+                let setCode = String(cString: cCard.set_code)
+                let language = String(cString: cCard.language)
+                let borderCropURL = String(cString: cCard.border_crop_url)
+                let backBorderCropURL = cCard.back_border_crop_url != nil ? String(cString: cCard.back_border_crop_url) : nil
+                
+                let faceMode: DoubleFaceMode
+                switch cCard.face_mode {
+                case LOCALHAWK_FACE_MODE_FRONT_ONLY:
+                    faceMode = .frontOnly
+                case LOCALHAWK_FACE_MODE_BACK_ONLY:
+                    faceMode = .backOnly
+                case LOCALHAWK_FACE_MODE_BOTH_SIDES:
+                    faceMode = .bothSides
+                default:
+                    faceMode = .bothSides
+                }
+                
+                let cardPrinting = CardPrintingData(
+                    name: name,
+                    set: setCode,
+                    language: language,
+                    borderCropURL: borderCropURL,
+                    backSideURL: backBorderCropURL
+                )
+                
+                let resolvedCard = ResolvedCard(
+                    card: cardPrinting,
+                    quantity: cCard.quantity,
+                    faceMode: faceMode
+                )
+                
+                resolvedCards.append(resolvedCard)
+                
+                print("🎯 [ProxyGenerator] Resolved card: '\(name)' (\(setCode)) [\(language)] x\(cCard.quantity)")
+            }
+            
+            // Free resolved cards memory
+            localhawk_free_resolved_cards(resolvedCardsPtr, resolvedCardsCount)
+        }
+        
+        print("✅ [ProxyGenerator] Parsed \(entries.count) entries, resolved \(resolvedCards.count) cards, background loading started automatically")
+        return .success((entries, resolvedCards))
     }
 
     /// Parse decklist and return resolved entries

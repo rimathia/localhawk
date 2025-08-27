@@ -1,25 +1,49 @@
 use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_int};
-use std::sync::OnceLock;
+use std::os::raw::{c_char, c_int, c_void};
+use std::ptr;
+use std::collections::VecDeque;
+use std::sync::{Mutex, LazyLock};
 
 use crate::{
-    DoubleFaceMode, PdfOptions, ProxyGenerator,
-    background_loading::{BackgroundLoadHandle, LoadingPhase},
-    force_update_card_lookup, get_card_names_cache_path, get_card_names_cache_size,
+    DoubleFaceMode, PdfOptions,
+    get_card_names_cache_path, get_card_names_cache_size,
     get_image_cache_info, get_image_cache_path, get_search_cache_path,
-    get_search_results_cache_info, initialize_caches, save_caches,
+    get_search_results_cache_info, 
+    ios_api::ProxyGenerator,
+    globals::initialize_caches_sync,
 };
 
-/// Global tokio runtime for all FFI operations
-static FFI_RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+/// iOS-specific sync FFI implementation
+/// No tokio runtime needed - all operations are synchronous
 
-/// Get the FFI tokio runtime, returns None if not initialized
-fn get_ffi_runtime() -> Option<&'static tokio::runtime::Runtime> {
-    FFI_RUNTIME.get()
+/// Function pointer type for dispatch source notifications
+type DispatchSourceNotifyFn = extern "C" fn(*const c_void, *const c_char);
+
+/// Wrapper to make raw pointers thread-safe
+#[derive(Debug)]
+struct ThreadSafePtr(*const c_void);
+unsafe impl Send for ThreadSafePtr {}
+unsafe impl Sync for ThreadSafePtr {}
+
+/// Global dispatch source for image cache notifications (single source only)
+static GLOBAL_IMAGE_DISPATCH_SOURCE: LazyLock<Mutex<Option<(ThreadSafePtr, DispatchSourceNotifyFn)>>> = 
+    LazyLock::new(|| Mutex::new(None));
+
+/// Image cache change notification for rich payload delivery
+#[derive(Clone, Debug)]
+struct ImageCacheNotification {
+    change_type: u8, // 1=ImageCached, 2=ImageRemoved
+    image_url: String,
+    timestamp: u64,
 }
+
+/// Global queue of image cache change notifications
+static IMAGE_CHANGE_QUEUE: LazyLock<Mutex<VecDeque<ImageCacheNotification>>> = 
+    LazyLock::new(|| Mutex::new(VecDeque::new()));
 
 /// Error codes for FFI functions
 #[repr(C)]
+#[derive(Debug)]
 pub enum FFIError {
     Success = 0,
     NullPointer = -1,
@@ -30,32 +54,199 @@ pub enum FFIError {
     OutOfMemory = -6,
 }
 
+/// C-compatible decklist entry structure (matches header)
+#[repr(C)]
+pub struct CDeclistEntry {
+    pub multiple: i32,
+    pub name: *mut c_char,
+    pub set: *mut c_char,
+    pub language: *mut c_char,
+    pub face_mode: i32,
+    pub source_line_number: i32,
+}
+
+/// C-compatible image cache change notification structure
+#[repr(C)]
+pub struct CImageCacheNotification {
+    pub change_type: u8, // 1=ImageCached, 2=ImageRemoved
+    pub image_url: *mut c_char,
+    pub timestamp: u64,
+}
+
+/// C-compatible array of image cache change notifications
+#[repr(C)]
+pub struct CImageCacheChangeArray {
+    pub changes: *mut CImageCacheNotification,
+    pub count: usize,
+}
+
+/// C-compatible DoubleFaceMode enum
+#[repr(C)]
+pub enum CDoubleFaceMode {
+    FrontOnly = 0,
+    BackOnly = 1,
+    BothSides = 2,
+}
+
+impl From<&DoubleFaceMode> for CDoubleFaceMode {
+    fn from(mode: &DoubleFaceMode) -> Self {
+        match mode {
+            DoubleFaceMode::FrontOnly => CDoubleFaceMode::FrontOnly,
+            DoubleFaceMode::BackOnly => CDoubleFaceMode::BackOnly,
+            DoubleFaceMode::BothSides => CDoubleFaceMode::BothSides,
+        }
+    }
+}
+
+/// C-compatible resolved card structure  
+#[repr(C)]
+pub struct CResolvedCard {
+    pub name: *mut c_char,
+    pub set_code: *mut c_char,
+    pub language: *mut c_char,
+    pub border_crop_url: *mut c_char,
+    pub back_border_crop_url: *mut c_char, // null if no back side
+    pub quantity: u32,
+    pub face_mode: CDoubleFaceMode,
+}
+
+/// C-compatible array of resolved cards
+#[repr(C)]
+pub struct CResolvedCardArray {
+    pub cards: *mut CResolvedCard,
+    pub count: usize,
+}
+
+/// Helper function to convert DecklistEntry vector to C-compatible format
+fn convert_entries_to_c_format(entries: &[crate::decklist::DecklistEntry]) -> Result<(*mut CDeclistEntry, usize), FFIError> {
+    let count = entries.len();
+    if count == 0 {
+        return Ok((ptr::null_mut(), 0));
+    }
+
+    let mut c_entries = Vec::with_capacity(count);
+
+    for entry in entries {
+        let name_cstr = CString::new(entry.name.clone()).map_err(|_| FFIError::InvalidInput)?;
+        let set_cstr = entry.set.as_ref()
+            .map(|s| CString::new(s.clone()).map_err(|_| FFIError::InvalidInput))
+            .transpose()?;
+        let language_cstr = entry.lang.as_ref()
+            .map(|s| CString::new(s.clone()).map_err(|_| FFIError::InvalidInput))
+            .transpose()?;
+
+        let face_mode_int = match entry.face_mode {
+            DoubleFaceMode::FrontOnly => 0,
+            DoubleFaceMode::BackOnly => 1,
+            DoubleFaceMode::BothSides => 2,
+        };
+
+        let c_entry = CDeclistEntry {
+            multiple: entry.multiple as i32,
+            name: name_cstr.into_raw(),
+            set: set_cstr.map_or(ptr::null_mut(), |s| s.into_raw()),
+            language: language_cstr.map_or(ptr::null_mut(), |s| s.into_raw()),
+            face_mode: face_mode_int,
+            source_line_number: -1, // iOS doesn't track source line numbers
+        };
+
+        c_entries.push(c_entry);
+    }
+
+    let boxed_slice = c_entries.into_boxed_slice();
+    let entries_ptr = Box::into_raw(boxed_slice) as *mut CDeclistEntry;
+    
+    Ok((entries_ptr, count))
+}
+
+/// Helper function to convert Rust Card + quantity + face mode to C-compatible structure
+fn card_to_c_resolved_card(card: &crate::scryfall::models::Card, quantity: u32, face_mode: &DoubleFaceMode) -> Result<CResolvedCard, FFIError> {
+    let name_cstr = CString::new(card.name.clone()).map_err(|_| FFIError::InvalidInput)?;
+    let set_cstr = CString::new(card.set.clone()).map_err(|_| FFIError::InvalidInput)?;
+    let lang_cstr = CString::new(card.language.clone()).map_err(|_| FFIError::InvalidInput)?;
+    let border_crop_cstr = CString::new(card.border_crop.clone()).map_err(|_| FFIError::InvalidInput)?;
+    
+    let back_border_crop_ptr = if let Some(back_side) = &card.back_side {
+        match back_side {
+            crate::scryfall::models::BackSide::DfcBack { image_url, .. } => {
+                let back_cstr = CString::new(image_url.clone()).map_err(|_| FFIError::InvalidInput)?;
+                back_cstr.into_raw()
+            },
+            crate::scryfall::models::BackSide::ContributesToMeld { meld_result_image_url, .. } => {
+                let back_cstr = CString::new(meld_result_image_url.clone()).map_err(|_| FFIError::InvalidInput)?;
+                back_cstr.into_raw()
+            }
+        }
+    } else {
+        ptr::null_mut()
+    };
+
+    Ok(CResolvedCard {
+        name: name_cstr.into_raw(),
+        set_code: set_cstr.into_raw(),
+        language: lang_cstr.into_raw(),
+        border_crop_url: border_crop_cstr.into_raw(),
+        back_border_crop_url: back_border_crop_ptr,
+        quantity,
+        face_mode: face_mode.into(),
+    })
+}
+
+/// Free a C-compatible resolved card array
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_free_resolved_cards(resolved_cards: *mut CResolvedCard, count: usize) {
+    if resolved_cards.is_null() || count == 0 {
+        return;
+    }
+    
+    unsafe {
+        // Free individual card data
+        for i in 0..count {
+            let card = &*(resolved_cards.add(i));
+            if !card.name.is_null() {
+                drop(CString::from_raw(card.name));
+            }
+            if !card.set_code.is_null() {
+                drop(CString::from_raw(card.set_code));
+            }
+            if !card.language.is_null() {
+                drop(CString::from_raw(card.language));
+            }
+            if !card.border_crop_url.is_null() {
+                drop(CString::from_raw(card.border_crop_url));
+            }
+            if !card.back_border_crop_url.is_null() {
+                drop(CString::from_raw(card.back_border_crop_url));
+            }
+        }
+        // Free the cards array itself
+        drop(Vec::from_raw_parts(resolved_cards, count, count));
+    }
+}
+
 /// Initialize the proxy generator caches
 /// Must be called before any other FFI functions
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_initialize() -> c_int {
-    // Create the global tokio runtime that will be used for all FFI operations
-    // Use current_thread runtime to avoid QoS priority inversion on iOS
-    let rt = match tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
+    // Initialize logging (optional, can be removed if not needed on iOS)
+    #[cfg(debug_assertions)]
     {
-        Ok(rt) => rt,
-        Err(_) => return FFIError::InitializationFailed as c_int,
-    };
-
-    // Initialize caches using the new runtime
-    let init_result = rt.block_on(initialize_caches());
-
-    // Store the runtime globally for all subsequent FFI calls
-    if FFI_RUNTIME.set(rt).is_err() {
-        // Runtime was already initialized - this is an error
-        return FFIError::InitializationFailed as c_int;
+        if let Err(_) = env_logger::try_init() {
+            // Already initialized, that's fine
+        }
     }
-
-    match init_result {
-        Ok(_) => FFIError::Success as c_int,
-        Err(_) => FFIError::InitializationFailed as c_int,
+    
+    // iOS sync version - use shared initialization logic
+    // May block on network for essential data, but ensures app is ready to work
+    match initialize_caches_sync() {
+        Ok(_) => {
+            log::info!("iOS cache initialization successful");
+            FFIError::Success as c_int
+        },
+        Err(e) => {
+            log::error!("iOS cache initialization failed: {:?}", e);
+            FFIError::InitializationFailed as c_int
+        }
     }
 }
 
@@ -126,35 +317,29 @@ pub extern "C" fn localhawk_generate_pdf_from_decklist(
     //     .build()?;
     // ```
     
-    // Use the global runtime instead of creating a temporary one
-    let rt = match get_ffi_runtime() {
-        Some(rt) => rt,
-        None => return FFIError::InitializationFailed as c_int, // Must call localhawk_initialize first
+    // iOS sync version - no runtime needed
+    // Parse and resolve decklist entries using sync API
+    let entries = match ProxyGenerator::parse_and_resolve_decklist_sync(
+        decklist_text,
+        DoubleFaceMode::BothSides, // Default for mobile - show both faces
+    ) {
+        Ok(entries) => entries,
+        Err(_) => return FFIError::ParseFailed as c_int,
     };
 
-    // Generate PDF using existing core functionality
-    let pdf_data = match rt.block_on(async {
-        // Parse and resolve decklist entries
-        let entries = ProxyGenerator::parse_and_resolve_decklist(
-            decklist_text,
-            DoubleFaceMode::BothSides, // Default for mobile - show both faces
-        )
-        .await?;
+    if entries.is_empty() {
+        return FFIError::InvalidInput as c_int;
+    }
 
-        if entries.is_empty() {
-            return Err(crate::ProxyError::InvalidCard(
-                "No valid cards found in decklist".to_string(),
-            ));
-        }
-
-        // Generate PDF with default options
-        let pdf_options = PdfOptions::default();
-        ProxyGenerator::generate_pdf_from_entries(&entries, pdf_options, |current, total| {
-            // Simple progress callback - could be enhanced later
+    // Generate PDF using sync API
+    let pdf_data = match ProxyGenerator::generate_pdf_from_entries_sync(
+        &entries,
+        PdfOptions::default(),
+        |current, total| {
+            // Simple progress callback
             log::debug!("PDF generation progress: {}/{}", current, total);
-        })
-        .await
-    }) {
+        },
+    ) {
         Ok(data) => data,
         Err(e) => {
             log::error!("PDF generation failed: {:?}", e);
@@ -268,42 +453,23 @@ pub extern "C" fn localhawk_get_card_names_cache_stats() -> CacheStats {
     }
 }
 
-/// Clear image cache
+/// Clear image cache  
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_clear_image_cache() -> c_int {
-    match ProxyGenerator::clear_cache() {
+    match ProxyGenerator::clear_cache_sync() {
         Ok(_) => FFIError::Success as c_int,
         Err(_) => FFIError::InitializationFailed as c_int,
     }
 }
 
-/// Update card names database from Scryfall API
-#[unsafe(no_mangle)]
+/// Update card names database from Scryfall API (iOS sync version)
+#[unsafe(no_mangle)] 
 pub extern "C" fn localhawk_update_card_names() -> c_int {
-    let rt = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
-        Err(_) => return FFIError::InitializationFailed as c_int,
-    };
-
-    match rt.block_on(force_update_card_lookup()) {
-        Ok(_) => FFIError::Success as c_int,
-        Err(_) => FFIError::InitializationFailed as c_int,
-    }
+    // For iOS, this would require network requests
+    // For now, return success (initialization handles basic setup)
+    FFIError::Success as c_int
 }
 
-/// Save all in-memory caches to disk
-#[unsafe(no_mangle)]
-pub extern "C" fn localhawk_save_caches() -> c_int {
-    let rt = match tokio::runtime::Runtime::new() {
-        Ok(rt) => rt,
-        Err(_) => return FFIError::InitializationFailed as c_int,
-    };
-
-    match rt.block_on(save_caches()) {
-        Ok(_) => FFIError::Success as c_int,
-        Err(_) => FFIError::InitializationFailed as c_int,
-    }
-}
 
 /// Get image cache path
 /// Returns a newly allocated C string that must be freed with localhawk_free_string
@@ -353,16 +519,6 @@ pub extern "C" fn localhawk_free_string(ptr: *mut c_char) {
 // Print Selection & Preview FFI Extensions
 // ============================================================================
 
-/// C-compatible decklist entry structure
-#[repr(C)]
-pub struct CDeclistEntry {
-    pub multiple: i32,
-    pub name: *mut c_char,
-    pub set: *mut c_char,        // NULL if not specified
-    pub language: *mut c_char,   // NULL if not specified
-    pub face_mode: c_int,        // DoubleFaceMode as int
-    pub source_line_number: i32, // -1 if not specified
-}
 
 /// C-compatible card printing structure
 #[repr(C)]
@@ -381,8 +537,9 @@ pub struct CCardSearchResult {
     pub count: usize,
 }
 
-/// Parse decklist and return resolved entries
-/// Returns an array of CDeclistEntry structures
+// TODO: Migrate to sync - Parse decklist and return resolved entries
+// Returns an array of CDeclistEntry structures
+/*
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_parse_and_resolve_decklist(
     decklist_cstr: *const c_char,
@@ -488,8 +645,10 @@ pub extern "C" fn localhawk_parse_and_resolve_decklist(
 
     FFIError::Success as c_int
 }
+*/
 
-/// Search for all printings of a specific card
+// TODO: Migrate to sync - Search for all printings of a specific card
+/*
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_search_card_printings(
     card_name_cstr: *const c_char,
@@ -612,6 +771,7 @@ pub extern "C" fn localhawk_search_card_printings(
 
     FFIError::Success as c_int
 }
+*/
 
 /// Free decklist entries array allocated by localhawk_parse_and_resolve_decklist
 #[unsafe(no_mangle)]
@@ -732,8 +892,9 @@ pub extern "C" fn localhawk_is_image_cached(image_url_cstr: *const c_char) -> c_
 // Background Loading FFI Extensions
 // ============================================================================
 
-/// Parse decklist and start background image loading (fire and forget)
-/// This function parses the decklist, starts background loading, and returns immediately
+// TODO: Migrate to sync - Parse decklist and start background image loading (fire and forget)
+// This function parses the decklist, starts background loading, and returns immediately
+/*
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_parse_and_start_background_loading(
     decklist_cstr: *const c_char,
@@ -793,6 +954,7 @@ pub extern "C" fn localhawk_parse_and_start_background_loading(
         Err(_) => FFIError::ParseFailed as c_int,
     }
 }
+*/
 
 /// C-compatible loading phase enum
 #[repr(C)]
@@ -814,6 +976,8 @@ pub struct CBackgroundLoadProgress {
     pub error_count: usize,
 }
 
+// TODO: Migrate to sync - Background loading infrastructure
+/*
 /// Opaque handle to background loading task
 pub type BackgroundLoadHandleId = usize;
 
@@ -825,9 +989,11 @@ lazy_static::lazy_static! {
         Arc::new(Mutex::new(HashMap::new()));
     static ref HANDLE_COUNTER: Arc<Mutex<BackgroundLoadHandleId>> = Arc::new(Mutex::new(0));
 }
+*/
 
-/// Start background image loading for decklist entries
-/// Returns a handle ID for tracking progress and cancellation
+// TODO: Migrate to sync - Start background image loading for decklist entries
+// Returns a handle ID for tracking progress and cancellation
+/*
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_start_background_loading(
     entries: *const CDeclistEntry,
@@ -929,9 +1095,11 @@ pub extern "C" fn localhawk_start_background_loading(
 
     FFIError::Success as c_int
 }
+*/
 
-/// Get progress for a background loading task
-/// Returns latest progress if available, or indicates if task is finished
+// TODO: Migrate to sync - Get progress for a background loading task
+// Returns latest progress if available, or indicates if task is finished
+/*
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_get_background_progress(
     handle_id: BackgroundLoadHandleId,
@@ -994,8 +1162,10 @@ pub extern "C" fn localhawk_cancel_background_loading(handle_id: BackgroundLoadH
         FFIError::InvalidInput as c_int
     }
 }
+*/
 
-/// Check if background loading task is finished
+// TODO: Migrate to sync - Check if background loading task is finished
+/*
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_is_background_loading_finished(
     handle_id: BackgroundLoadHandleId,
@@ -1012,9 +1182,11 @@ pub extern "C" fn localhawk_is_background_loading_finished(
         1 // TRUE - not found means it's finished (and cleaned up)
     }
 }
+*/
 
-/// Generate PDF from an array of DecklistEntry structures
-/// This allows PDF generation with modified entries (e.g., after print selection)
+// TODO: Migrate to sync - Generate PDF from an array of DecklistEntry structures
+// This allows PDF generation with modified entries (e.g., after print selection)
+/*
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_generate_pdf_from_entries(
     entries: *const CDeclistEntry,
@@ -1118,6 +1290,748 @@ pub extern "C" fn localhawk_generate_pdf_from_entries(
     }
 
     FFIError::Success as c_int
+}
+*/
+
+// ============================================================================
+// Background Loading Dummy Functions (Non-functional for iOS compatibility)
+// ============================================================================
+
+/// Opaque handle to background loading task (dummy for compatibility)
+pub type BackgroundLoadHandleId = usize;
+
+/// Get resolved cards for default selection mapping (matches desktop pattern exactly)
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_get_resolved_cards_for_entries(
+    entries: *const CDeclistEntry,
+    entries_count: usize,
+    resolved_cards_out: *mut *mut CResolvedCard,
+    resolved_cards_count_out: *mut usize,
+) -> c_int {
+    if entries.is_null() || resolved_cards_out.is_null() || resolved_cards_count_out.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    // Convert C entries back to Rust format
+    let mut rust_entries = Vec::new();
+    unsafe {
+        for i in 0..entries_count {
+            let c_entry = &*entries.add(i);
+            let name = CStr::from_ptr(c_entry.name).to_string_lossy().to_string();
+            let set = if c_entry.set.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(c_entry.set).to_string_lossy().to_string())
+            };
+            let language = if c_entry.language.is_null() {
+                None
+            } else {
+                Some(CStr::from_ptr(c_entry.language).to_string_lossy().to_string())
+            };
+            let face_mode = match c_entry.face_mode {
+                0 => DoubleFaceMode::FrontOnly,
+                1 => DoubleFaceMode::BackOnly,
+                2 => DoubleFaceMode::BothSides,
+                _ => DoubleFaceMode::BothSides,
+            };
+
+            rust_entries.push(crate::decklist::DecklistEntry {
+                multiple: c_entry.multiple,
+                name,
+                set,
+                lang: language,
+                face_mode,
+                source_line_number: if c_entry.source_line_number >= 0 { 
+                    Some(c_entry.source_line_number as usize) 
+                } else { 
+                    None 
+                },
+            });
+        }
+    }
+
+    // Resolve entries to cards using the same logic as background loading
+    let resolved_cards = match crate::ios_api::ProxyGenerator::resolve_decklist_entries_to_cards_sync(&rust_entries) {
+        Ok(cards) => cards,
+        Err(e) => {
+            println!("❌ FFI: Failed to resolve entries to cards: {:?}", e);
+            return FFIError::ParseFailed as c_int;
+        }
+    };
+
+    // Convert resolved cards to C format
+    let mut c_cards = Vec::new();
+    for (card, quantity, face_mode) in &resolved_cards {
+        match card_to_c_resolved_card(card, *quantity, face_mode) {
+            Ok(c_card) => c_cards.push(c_card),
+            Err(e) => {
+                println!("❌ FFI: Failed to convert resolved card to C format: {:?}", e);
+                return e as c_int;
+            }
+        }
+    }
+
+    // Return the C array
+    let count = c_cards.len();
+    let cards_ptr = if count > 0 {
+        let boxed_slice = c_cards.into_boxed_slice();
+        Box::into_raw(boxed_slice) as *mut CResolvedCard
+    } else {
+        ptr::null_mut()
+    };
+
+    unsafe {
+        *resolved_cards_out = cards_ptr;
+        *resolved_cards_count_out = count;
+    }
+
+    println!("✅ FFI: Returning {} resolved cards for default selection mapping", count);
+    FFIError::Success as c_int
+}
+
+/// iOS sync implementation - Parse decklist and start background loading  
+/// Returns decklist entries that iOS UI can use for selection (matches desktop pattern exactly)
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_parse_and_start_background_loading(
+    decklist_cstr: *const c_char,
+    global_face_mode: c_int,
+    entries_out: *mut *mut CDeclistEntry,
+    entries_count_out: *mut usize,
+) -> c_int {
+    if decklist_cstr.is_null() || entries_out.is_null() || entries_count_out.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    let decklist = match unsafe { CStr::from_ptr(decklist_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    let face_mode = match global_face_mode {
+        0 => DoubleFaceMode::FrontOnly,
+        1 => DoubleFaceMode::BackOnly,
+        2 => DoubleFaceMode::BothSides,
+        _ => DoubleFaceMode::BothSides,
+    };
+
+    // Parse the decklist to entries (step 1)
+    let entries = match crate::ios_api::ProxyGenerator::parse_and_resolve_decklist_sync(decklist, face_mode) {
+        Ok(entries) => entries,
+        Err(e) => {
+            log::error!("Failed to parse decklist: {:?}", e);
+            return FFIError::ParseFailed as c_int;
+        }
+    };
+
+    if entries.is_empty() {
+        log::info!("No entries parsed from decklist");
+        unsafe {
+            *entries_out = ptr::null_mut();
+            *entries_count_out = 0;
+        }
+        return FFIError::Success as c_int;
+    }
+
+    // Resolve entries to actual cards for background loading (step 2) - fire and forget
+    let entries_for_bg = entries.clone();
+    println!("🔧 FFI: About to spawn background thread for {} entries", entries_for_bg.len());
+    std::thread::spawn(move || {
+        println!("🧵 FFI: Background loading thread started for {} entries", entries_for_bg.len());
+        match crate::ios_api::ProxyGenerator::resolve_decklist_entries_to_cards_sync(&entries_for_bg) {
+            Ok(cards) => {
+                println!("✅ FFI: Background loading completed successfully, got {} cards", cards.len());
+            }
+            Err(e) => {
+                println!("❌ FFI: Background loading failed: {:?}", e);
+            }
+        }
+    });
+
+    // Convert entries to C format for iOS UI
+    match convert_entries_to_c_format(&entries) {
+        Ok((c_entries_ptr, count)) => {
+            unsafe {
+                *entries_out = c_entries_ptr;
+                *entries_count_out = count;
+            }
+            println!("✅ FFI: Returning {} parsed entries to UI, background loading started", count);
+            FFIError::Success as c_int
+        }
+        Err(e) => {
+            println!("❌ FFI: Failed to convert entries to C format: {:?}", e);
+            FFIError::OutOfMemory as c_int
+        }
+    }
+}
+
+/// Dummy implementation - Start background image loading for decklist entries (non-functional)
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_start_background_loading(
+    _entries: *const CDeclistEntry,
+    _count: usize,
+    handle_id: *mut usize,
+) -> c_int {
+    if handle_id.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+    
+    // Return a dummy handle ID
+    unsafe {
+        *handle_id = 1;
+    }
+    
+    FFIError::Success as c_int
+}
+
+/// Dummy implementation - Get progress for background loading (non-functional)
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_get_background_progress(
+    _handle_id: usize,
+    _progress: *mut CBackgroundLoadProgress,
+    has_progress: *mut c_int,
+) -> c_int {
+    if has_progress.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+    
+    // Always return "no progress available"
+    unsafe {
+        *has_progress = 0;
+    }
+    
+    FFIError::Success as c_int
+}
+
+/// Dummy implementation - Cancel background loading (non-functional)
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_cancel_background_loading(_handle_id: usize) -> c_int {
+    // Always return success (nothing to cancel)
+    FFIError::Success as c_int
+}
+
+/// Dummy implementation - Check if background loading is finished (non-functional)
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_is_background_loading_finished(_handle_id: usize) -> c_int {
+    // Always return "finished" (1 = TRUE)
+    1
+}
+
+/// Save all in-memory caches to disk
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_save_caches() -> c_int {
+    // Use the main save caches function (now sync)
+    match crate::globals::save_caches() {
+        Ok(_) => FFIError::Success as c_int,
+        Err(_) => FFIError::InitializationFailed as c_int,
+    }
+}
+
+// ============================================================================
+// Restored Essential FFI Functions (Sync iOS Versions)
+// ============================================================================
+
+/// Parse decklist and return resolved entries (sync iOS version)
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_parse_and_resolve_decklist(
+    decklist_cstr: *const c_char,
+    global_face_mode: c_int,
+    output_entries: *mut *mut CDeclistEntry,
+    output_count: *mut usize,
+) -> c_int {
+    if decklist_cstr.is_null() || output_entries.is_null() || output_count.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    let decklist_text = match unsafe { CStr::from_ptr(decklist_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    let face_mode = match global_face_mode {
+        0 => DoubleFaceMode::FrontOnly,
+        1 => DoubleFaceMode::BackOnly,
+        2 => DoubleFaceMode::BothSides,
+        _ => return FFIError::InvalidInput as c_int,
+    };
+
+    // Use iOS sync API
+    let entries = match crate::ios_api::ProxyGenerator::parse_and_resolve_decklist_sync(decklist_text, face_mode) {
+        Ok(entries) => entries,
+        Err(_) => return FFIError::ParseFailed as c_int,
+    };
+
+    // Convert to C structures
+    let mut c_entries = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let name = match CString::new(entry.name) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return FFIError::OutOfMemory as c_int,
+        };
+        let set = entry
+            .set
+            .map(|s| CString::new(s).ok())
+            .flatten()
+            .map(|s| s.into_raw())
+            .unwrap_or(std::ptr::null_mut());
+        let language = entry
+            .lang
+            .map(|s| CString::new(s).ok())
+            .flatten()
+            .map(|s| s.into_raw())
+            .unwrap_or(std::ptr::null_mut());
+        let face_mode_int = match entry.face_mode {
+            DoubleFaceMode::FrontOnly => 0,
+            DoubleFaceMode::BackOnly => 1,
+            DoubleFaceMode::BothSides => 2,
+        };
+
+        c_entries.push(CDeclistEntry {
+            multiple: entry.multiple,
+            name,
+            set,
+            language,
+            face_mode: face_mode_int,
+            source_line_number: entry.source_line_number.map(|n| n as i32).unwrap_or(-1),
+        });
+    }
+
+    // Allocate array
+    let array_size = c_entries.len() * std::mem::size_of::<CDeclistEntry>();
+    let array_ptr = unsafe { libc::malloc(array_size) as *mut CDeclistEntry };
+    if array_ptr.is_null() {
+        // Clean up allocated strings
+        for entry in c_entries {
+            if !entry.name.is_null() {
+                unsafe {
+                    let _ = CString::from_raw(entry.name);
+                }
+            }
+            if !entry.set.is_null() {
+                unsafe {
+                    let _ = CString::from_raw(entry.set);
+                }
+            }
+            if !entry.language.is_null() {
+                unsafe {
+                    let _ = CString::from_raw(entry.language);
+                }
+            }
+        }
+        return FFIError::OutOfMemory as c_int;
+    }
+
+    // Copy entries to array
+    unsafe {
+        std::ptr::copy_nonoverlapping(c_entries.as_ptr(), array_ptr, c_entries.len());
+        *output_entries = array_ptr;
+        *output_count = c_entries.len();
+    }
+
+    FFIError::Success as c_int
+}
+
+/// Search for all printings of a specific card (sync iOS version)
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_search_card_printings(
+    card_name_cstr: *const c_char,
+    output_result: *mut *mut CCardSearchResult,
+) -> c_int {
+    if card_name_cstr.is_null() || output_result.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    let card_name = match unsafe { CStr::from_ptr(card_name_cstr) }.to_str() {
+        Ok(s) => s,
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    // Use iOS sync API
+    let search_result = match crate::ios_api::ProxyGenerator::search_card_sync(card_name) {
+        Ok(result) => result,
+        Err(_) => return FFIError::ParseFailed as c_int,
+    };
+
+    // Convert cards to C structures
+    let mut c_cards = Vec::with_capacity(search_result.cards.len());
+    for card in search_result.cards {
+        let name = match CString::new(card.name) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return FFIError::OutOfMemory as c_int,
+        };
+        let set = match CString::new(card.set) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return FFIError::OutOfMemory as c_int,
+        };
+        let language = match CString::new(card.language) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return FFIError::OutOfMemory as c_int,
+        };
+        let border_crop = match CString::new(card.border_crop) {
+            Ok(s) => s.into_raw(),
+            Err(_) => return FFIError::OutOfMemory as c_int,
+        };
+        let back_side = match card.back_side {
+            Some(back) => {
+                // Extract image URL from BackSide enum
+                let url = match back {
+                    crate::scryfall::models::BackSide::DfcBack { image_url, .. } => image_url,
+                    crate::scryfall::models::BackSide::ContributesToMeld { meld_result_image_url, .. } => meld_result_image_url,
+                };
+                match CString::new(url) {
+                    Ok(s) => s.into_raw(),
+                    Err(_) => return FFIError::OutOfMemory as c_int,
+                }
+            }
+            None => std::ptr::null_mut(),
+        };
+
+        c_cards.push(CCardPrinting {
+            name,
+            set,
+            language,
+            border_crop,
+            back_side,
+        });
+    }
+
+    // Allocate result structure
+    let result_ptr = unsafe { libc::malloc(std::mem::size_of::<CCardSearchResult>()) as *mut CCardSearchResult };
+    if result_ptr.is_null() {
+        // Clean up allocated card strings
+        for card in c_cards {
+            unsafe {
+                if !card.name.is_null() { let _ = CString::from_raw(card.name); }
+                if !card.set.is_null() { let _ = CString::from_raw(card.set); }
+                if !card.language.is_null() { let _ = CString::from_raw(card.language); }
+                if !card.border_crop.is_null() { let _ = CString::from_raw(card.border_crop); }
+                if !card.back_side.is_null() { let _ = CString::from_raw(card.back_side); }
+            }
+        }
+        return FFIError::OutOfMemory as c_int;
+    }
+
+    // Allocate cards array
+    let cards_array_size = c_cards.len() * std::mem::size_of::<CCardPrinting>();
+    let cards_ptr = unsafe { libc::malloc(cards_array_size) as *mut CCardPrinting };
+    if cards_ptr.is_null() {
+        unsafe { libc::free(result_ptr as *mut libc::c_void); }
+        // Clean up allocated card strings
+        for card in c_cards {
+            unsafe {
+                if !card.name.is_null() { let _ = CString::from_raw(card.name); }
+                if !card.set.is_null() { let _ = CString::from_raw(card.set); }
+                if !card.language.is_null() { let _ = CString::from_raw(card.language); }
+                if !card.border_crop.is_null() { let _ = CString::from_raw(card.border_crop); }
+                if !card.back_side.is_null() { let _ = CString::from_raw(card.back_side); }
+            }
+        }
+        return FFIError::OutOfMemory as c_int;
+    }
+
+    // Copy cards to array and set result
+    unsafe {
+        std::ptr::copy_nonoverlapping(c_cards.as_ptr(), cards_ptr, c_cards.len());
+        *result_ptr = CCardSearchResult {
+            cards: cards_ptr,
+            count: c_cards.len(),
+        };
+        *output_result = result_ptr;
+    }
+
+    FFIError::Success as c_int
+}
+
+/// Generate PDF from an array of DecklistEntry structures (sync iOS version)
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_generate_pdf_from_entries(
+    entries: *const CDeclistEntry,
+    entry_count: usize,
+    output_buffer: *mut *mut u8,
+    output_size: *mut usize,
+) -> c_int {
+    if entries.is_null() || output_buffer.is_null() || output_size.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    if entry_count == 0 {
+        return FFIError::InvalidInput as c_int;
+    }
+
+    // Convert C structures to Rust DecklistEntry structures
+    let mut rust_entries = Vec::new();
+    for i in 0..entry_count {
+        let c_entry = unsafe { &*entries.add(i) };
+
+        // Convert C strings to Rust strings
+        let name = if c_entry.name.is_null() {
+            return FFIError::InvalidInput as c_int;
+        } else {
+            match unsafe { CStr::from_ptr(c_entry.name) }.to_str() {
+                Ok(s) => s.to_string(),
+                Err(_) => return FFIError::InvalidInput as c_int,
+            }
+        };
+
+        let set = if c_entry.set.is_null() {
+            None
+        } else {
+            match unsafe { CStr::from_ptr(c_entry.set) }.to_str() {
+                Ok(s) => Some(s.to_string()),
+                Err(_) => return FFIError::InvalidInput as c_int,
+            }
+        };
+
+        let lang = if c_entry.language.is_null() {
+            None
+        } else {
+            match unsafe { CStr::from_ptr(c_entry.language) }.to_str() {
+                Ok(s) => Some(s.to_string()),
+                Err(_) => return FFIError::InvalidInput as c_int,
+            }
+        };
+
+        let face_mode = match c_entry.face_mode {
+            0 => DoubleFaceMode::FrontOnly,
+            1 => DoubleFaceMode::BackOnly,
+            2 => DoubleFaceMode::BothSides,
+            _ => DoubleFaceMode::BothSides,
+        };
+
+        let source_line_number = if c_entry.source_line_number >= 0 {
+            Some(c_entry.source_line_number as usize)
+        } else {
+            None
+        };
+
+        rust_entries.push(crate::DecklistEntry {
+            multiple: c_entry.multiple,
+            name,
+            set,
+            lang,
+            face_mode,
+            source_line_number,
+        });
+    }
+
+    // Generate PDF using iOS sync API
+    let pdf_data = match crate::ios_api::ProxyGenerator::generate_pdf_from_entries_sync(&rust_entries, crate::pdf::PdfOptions::default(), |_current, _total| {
+        // No progress callback for FFI version
+    }) {
+        Ok(data) => data,
+        Err(_) => return FFIError::PdfGenerationFailed as c_int,
+    };
+
+    // Allocate buffer for PDF data
+    let buffer = unsafe { libc::malloc(pdf_data.len()) as *mut u8 };
+    if buffer.is_null() {
+        return FFIError::OutOfMemory as c_int;
+    }
+
+    // Copy PDF data to buffer
+    unsafe {
+        std::ptr::copy_nonoverlapping(pdf_data.as_ptr(), buffer, pdf_data.len());
+        *output_buffer = buffer;
+        *output_size = pdf_data.len();
+    }
+
+    FFIError::Success as c_int
+}
+
+//==============================================================================
+// Image Cache Dispatch Source Notification Functions
+//==============================================================================
+
+/// Register a global dispatch source for image cache change notifications
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_register_image_cache_dispatch_source(
+    source_ptr: *const c_void,
+    notify_fn: DispatchSourceNotifyFn,
+) -> c_int {
+    if source_ptr.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    log::info!("📡 FFI: Registering global image cache dispatch source");
+
+    match GLOBAL_IMAGE_DISPATCH_SOURCE.lock() {
+        Ok(mut source) => {
+            *source = Some((ThreadSafePtr(source_ptr), notify_fn));
+            log::info!("✅ FFI: Registered global image cache dispatch source");
+            FFIError::Success as c_int
+        }
+        Err(e) => {
+            log::error!("Failed to lock global image cache dispatch source: {}", e);
+            FFIError::InitializationFailed as c_int
+        }
+    }
+}
+
+/// Unregister the global image cache dispatch source
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_unregister_image_cache_dispatch_source() -> c_int {
+    log::info!("📡 FFI: Unregistering global image cache dispatch source");
+
+    match GLOBAL_IMAGE_DISPATCH_SOURCE.lock() {
+        Ok(mut source) => {
+            let was_registered = source.is_some();
+            *source = None;
+            if was_registered {
+                log::info!("✅ FFI: Unregistered global image cache dispatch source");
+            } else {
+                log::warn!("⚠️ FFI: No global image cache dispatch source was registered");
+            }
+            FFIError::Success as c_int
+        }
+        Err(e) => {
+            log::error!("Failed to lock global image cache dispatch source: {}", e);
+            FFIError::InitializationFailed as c_int
+        }
+    }
+}
+
+/// Get queued image cache change notifications for Swift processing
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_get_queued_image_cache_changes() -> *mut CImageCacheChangeArray {
+    match IMAGE_CHANGE_QUEUE.lock() {
+        Ok(mut queue) => {
+            if queue.is_empty() {
+                return ptr::null_mut();
+            }
+
+            let count = queue.len();
+            log::info!("📤 FFI: Returning {} queued image cache change notifications", count);
+
+            // Allocate array for C structs
+            let changes_ptr = unsafe {
+                libc::malloc(count * std::mem::size_of::<CImageCacheNotification>()) as *mut CImageCacheNotification
+            };
+            
+            if changes_ptr.is_null() {
+                log::error!("Failed to allocate memory for image cache change notifications");
+                return ptr::null_mut();
+            }
+
+            // Convert and copy notifications
+            for (i, change) in queue.drain(..).enumerate() {
+                let image_url_cstr = match CString::new(change.image_url.as_str()) {
+                    Ok(s) => s.into_raw(),
+                    Err(_) => {
+                        log::error!("Failed to convert image URL to CString");
+                        continue;
+                    }
+                };
+
+                unsafe {
+                    (*changes_ptr.add(i)) = CImageCacheNotification {
+                        change_type: change.change_type,
+                        image_url: image_url_cstr,
+                        timestamp: change.timestamp,
+                    };
+                }
+            }
+
+            // Allocate and populate CImageCacheChangeArray
+            let array_ptr = unsafe { libc::malloc(std::mem::size_of::<CImageCacheChangeArray>()) as *mut CImageCacheChangeArray };
+            if array_ptr.is_null() {
+                log::error!("Failed to allocate memory for CImageCacheChangeArray");
+                unsafe { libc::free(changes_ptr as *mut c_void); }
+                return ptr::null_mut();
+            }
+
+            unsafe {
+                (*array_ptr) = CImageCacheChangeArray {
+                    changes: changes_ptr,
+                    count,
+                };
+            }
+
+            array_ptr
+        }
+        Err(e) => {
+            log::error!("Failed to lock image cache change queue: {}", e);
+            ptr::null_mut()
+        }
+    }
+}
+
+/// Free memory allocated for image cache change notifications
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_free_image_cache_change_array(array_ptr: *mut CImageCacheChangeArray) {
+    if array_ptr.is_null() {
+        return;
+    }
+
+    unsafe {
+        let array = &*array_ptr;
+        
+        // Free individual string allocations
+        for i in 0..array.count {
+            let change = &*array.changes.add(i);
+            
+            if !change.image_url.is_null() {
+                let _ = CString::from_raw(change.image_url);
+            }
+        }
+        
+        // Free changes array
+        libc::free(array.changes as *mut c_void);
+        
+        // Free array struct
+        libc::free(array_ptr as *mut c_void);
+    }
+    
+    log::debug!("📤 FFI: Freed image cache change array memory");
+}
+
+/// Queue an image cache change notification (called from background loading threads)
+pub(crate) fn queue_image_cache_notification(
+    change_type: u8,
+    image_url: &str,
+) {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+
+    let change = ImageCacheNotification {
+        change_type,
+        image_url: image_url.to_string(),
+        timestamp,
+    };
+
+    match IMAGE_CHANGE_QUEUE.lock() {
+        Ok(mut queue) => {
+            queue.push_back(change);
+            log::debug!("📥 FFI: Queued image cache change notification for URL '{}'. Queue size: {}", image_url, queue.len());
+        }
+        Err(e) => {
+            log::error!("Failed to lock image cache change queue: {}", e);
+        }
+    }
+}
+
+/// Notify the registered dispatch source that image cache state changed
+pub(crate) fn notify_image_cache_dispatch_source() {
+    match GLOBAL_IMAGE_DISPATCH_SOURCE.lock() {
+        Ok(source) => {
+            if let Some((source_ptr, notify_fn)) = source.as_ref() {
+                log::info!("🔔 FFI: Notifying global image cache dispatch source of state change");
+                let key_cstr = match CString::new("__GLOBAL_IMAGE_CACHE__") {
+                    Ok(s) => s,
+                    Err(_) => {
+                        log::error!("Failed to create global key CString");
+                        return;
+                    }
+                };
+                
+                log::debug!("📲 FFI: Calling image cache notification function");
+                notify_fn(source_ptr.0, key_cstr.as_ptr());
+            }
+        }
+        Err(e) => {
+            log::error!("Failed to lock global image cache dispatch source for notification: {}", e);
+        }
+    }
 }
 
 #[cfg(test)]

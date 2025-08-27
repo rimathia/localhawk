@@ -22,13 +22,13 @@ cargo clean -p localhawk-core
 
 # Build for all iOS targets
 echo "🔨 Building for aarch64-apple-ios (device)..."
-cargo build --release --target aarch64-apple-ios -p localhawk-core
+cargo build --release --target aarch64-apple-ios --features ios -p localhawk-core
 
 echo "🔨 Building for x86_64-apple-ios (simulator x86_64)..."
-cargo build --release --target x86_64-apple-ios -p localhawk-core
+cargo build --release --target x86_64-apple-ios --features ios -p localhawk-core
 
 echo "🔨 Building for aarch64-apple-ios-sim (simulator arm64)..."
-cargo build --release --target aarch64-apple-ios-sim -p localhawk-core
+cargo build --release --target aarch64-apple-ios-sim --features ios -p localhawk-core
 
 # Create output directory
 mkdir -p ios-libs
