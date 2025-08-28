@@ -103,29 +103,6 @@ class ResolvedCardsWrapper: ObservableObject {
     }
 }
 
-/// Legacy structure - keeping for compatibility during transition
-/// Contains the actual selected card and quantity information  
-struct ResolvedCardData: Equatable {
-    let name: String
-    let setCode: String
-    let language: String
-    let borderCropURL: String
-    let backBorderCropURL: String?
-    let quantity: UInt32
-    let faceMode: DoubleFaceMode
-    
-    init(name: String, setCode: String, language: String, borderCropURL: String, 
-         backBorderCropURL: String? = nil, quantity: UInt32, faceMode: DoubleFaceMode) {
-        self.name = name
-        self.setCode = setCode
-        self.language = language
-        self.borderCropURL = borderCropURL
-        self.backBorderCropURL = backBorderCropURL
-        self.quantity = quantity
-        self.faceMode = faceMode
-    }
-}
-
 enum ProxyGeneratorError: Error, LocalizedError {
     case initializationFailed
     case nullPointer

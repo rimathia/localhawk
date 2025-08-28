@@ -9,7 +9,7 @@ struct PrintSelectionView: View {
     @State private var availablePrintings: [String: [CardPrintingData]] = [:] // Only for print selection modal
     @State private var isLoadingPrintings = false
     @State private var errorMessage: String?
-    @State private var showCardList = false
+    @State private var currentPage = 0
     
     // Image cache notification state
     @State private var imageCacheListenerID: UUID?
@@ -21,96 +21,59 @@ struct PrintSelectionView: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 16) {
+            VStack(spacing: 8) {
                 if resolvedCardsWrapper.cards.isEmpty {
                     Text("No cards found in decklist")
                         .foregroundColor(.secondary)
                         .font(.subheadline)
                 } else {
-                    // Header info
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Preview & Print Selection")
-                            .font(.title2)
-                            .fontWeight(.semibold)
+                    // Compact header info
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Preview & Print Selection")
+                                .font(.headline)
+                            
+                            let totalCards = resolvedCards.reduce(0) { $0 + Int($1.quantity) }
+                            Text("\(resolvedCards.count) unique cards, \(totalCards) total")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                         
-                        let totalCards = resolvedCards.reduce(0) { $0 + Int($1.quantity) }
-                        Text("\(resolvedCards.count) unique cards, \(totalCards) total")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                        Spacer()
                         
                         if isLoadingPrintings {
                             HStack {
                                 ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Loading available printings...")
+                                    .scaleEffect(0.7)
+                                Text("Loading...")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
                         }
+                        
+                        Button("Reload Images") {
+                            reloadGridImages()
+                        }
+                        .font(.caption)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(6)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
                     
-                    // Background loading happens automatically - no progress indicator needed
-                    
-                    // 3x3 Grid Preview (matching desktop app)
-                    VStack(spacing: 12) {
-                        HStack {
-                            Text("Preview Grid")
-                                .font(.headline)
-                            
-                            Spacer()
-                            
-                            Button("Reload Images") {
-                                reloadGridImages()
-                            }
-                            .font(.caption)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.blue)
-                            .foregroundColor(.white)
-                            .cornerRadius(8)
+                    // Large Grid Preview (fills most of screen)
+                    GridPreviewSection(
+                        resolvedCards: resolvedCards,
+                        currentPage: currentPage,
+                        availablePrintings: availablePrintings,
+                        onPageChanged: { newPage in
+                            currentPage = newPage
                         }
-                        .padding(.horizontal)
-                        
-                        GridPreviewSection(
-                            resolvedCards: resolvedCards,
-                            currentPage: 0 // TODO: Add page navigation
-                        )
-                        .padding(.horizontal)
-                        
-                        // Card Selection List (collapsible) - matches desktop functionality
-                        VStack(spacing: 8) {
-                            HStack {
-                                Text("Card Selection")
-                                    .font(.headline)
-                                Spacer()
-                                Button(showCardList ? "Hide" : "Show") {
-                                    withAnimation {
-                                        showCardList.toggle()
-                                    }
-                                }
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                            }
-                            .padding(.horizontal)
-                            
-                            if showCardList {
-                                ScrollView {
-                                    LazyVStack(spacing: 12) {
-                                        ForEach(Array(resolvedCards.enumerated()), id: \.offset) { index, resolvedCard in
-                                            ResolvedCardRow(
-                                                resolvedCard: resolvedCard,
-                                                availablePrintings: availablePrintings[resolvedCard.card.name] ?? []
-                                            )
-                                        }
-                                    }
-                                    .padding(.horizontal)
-                                }
-                                .frame(maxHeight: 300)
-                            }
-                        }
-                    }
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(.horizontal, 4) // Minimal padding for full screen effect
                     
                     if let errorMessage = errorMessage {
                         Text(errorMessage)
@@ -157,15 +120,6 @@ struct PrintSelectionView: View {
         }
     }
     
-    private func entryKey(for entry: DecklistEntryData) -> String {
-        // Use source line number if available, otherwise use name
-        if let lineNumber = entry.sourceLineNumber {
-            return "line_\(lineNumber)"
-        } else {
-            return "name_\(entry.name)"
-        }
-    }
-    
     private func loadAvailablePrintings() {
         print("loadAvailablePrintings() called with \(resolvedCards.count) resolved cards")
         isLoadingPrintings = true
@@ -207,20 +161,12 @@ struct PrintSelectionView: View {
                         print("  \(cardName): \(printings.count) printings")
                     }
                     availablePrintings = newAvailablePrintings
-                    
-                    // Initialize selected printings with best matches
-                    initializeSelectedPrintings()
                 }
                 
                 isLoadingPrintings = false
                 print("loadAvailablePrintings completed")
             }
         }
-    }
-    
-    // Legacy function removed - desktop pattern doesn't need complex matching
-    private func initializeSelectedPrintings() {
-        // No-op: Resolved cards are the source of truth, no matching needed
     }
     
     private func reloadGridImages() {
@@ -237,11 +183,6 @@ struct PrintSelectionView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             availablePrintings = current
         }
-    }
-    
-    // Legacy function removed - desktop pattern modifies resolved cards directly
-    private func applySelectedPrintingToEntry(entryIndex: Int, printingIndex: Int) {
-        // No-op: Print selection modifies ResolvedCard.card directly
     }
     
     // MARK: - Image Cache Notifications
@@ -310,126 +251,74 @@ struct PrintSelectionView: View {
     
 }
 
-struct CardEntryRow: View {
-    let entry: DecklistEntryData
-    let selectedPrintingIndex: Int
-    let availablePrintings: [CardPrintingData]
-    let onPrintingSelected: (Int) -> Void
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Card info header
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(entry.multiple)x \(entry.name)")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    
-                    HStack {
-                        if let set = entry.set {
-                            Text("[\(set.uppercased())]")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                        }
-                        if let language = entry.language {
-                            Text("[\(language.uppercased())]")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        }
-                        Text(entry.faceMode.displayName)
-                            .font(.caption)
-                            .foregroundColor(.orange)
-                    }
-                }
-                
-                Spacer()
-                
-                // Show loading state or print count
-                if availablePrintings.isEmpty {
-                    Text("Loading printings...")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } else {
-                    Text("\(availablePrintings.count) printings")
-                        .font(.caption)
-                        .foregroundColor(.blue)
-                }
-            }
-            
-            // Available printings (simple text list for now)
-            if !availablePrintings.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Available printings:")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    ForEach(Array(availablePrintings.enumerated()), id: \.offset) { index, printing in
-                        HStack {
-                            Button(action: {
-                                onPrintingSelected(index)
-                            }) {
-                                HStack {
-                                    Image(systemName: selectedPrintingIndex == index ? "checkmark.circle.fill" : "circle")
-                                        .foregroundColor(selectedPrintingIndex == index ? .blue : .gray)
-                                    
-                                    Text("\(printing.set.uppercased()) • \(printing.language.uppercased())")
-                                        .font(.caption)
-                                        .foregroundColor(.primary)
-                                    
-                                    Spacer()
-                                }
-                            }
-                            .buttonStyle(PlainButtonStyle())
-                        }
-                    }
-                }
-                .padding(.leading, 16)
-            }
-        }
-        .padding()
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(8)
-    }
-}
 
 // MARK: - Grid Preview Section
 
 struct GridPreviewSection: View {
     let resolvedCards: [ResolvedCard]
     let currentPage: Int
+    let availablePrintings: [String: [CardPrintingData]]
+    let onPageChanged: (Int) -> Void
     
-    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 3)
+    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 3)
     private let cardsPerPage = 9
     
     var body: some View {
-        VStack(spacing: 8) {
-            // Grid layout (3x3 matching desktop app)
-            LazyVGrid(columns: gridColumns, spacing: 4) {
+        VStack(spacing: 0) {
+            // Grid layout (3x3 matching desktop app, no spacing like PDF)
+            LazyVGrid(columns: gridColumns, spacing: 0) {
                 ForEach(0..<cardsPerPage, id: \.self) { index in
                     GridCardView(
-                        resolvedCard: getResolvedCardForGridPosition(index)
+                        resolvedCard: getResolvedCardForGridPosition(index),
+                        availablePrintings: availablePrintings
                     )
                     .aspectRatio(480.0/680.0, contentMode: .fit) // Magic card aspect ratio
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .padding(8)
             .background(Color(UIColor.systemBackground))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(Color(UIColor.separator), lineWidth: 1)
-            )
             
-            // Page info (for future multi-page support)
-            Text("Page \(currentPage + 1) of 1")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            // Page navigation
+            let totalCards = resolvedCards.reduce(0) { $0 + Int($1.quantity) }
+            let totalPages = max(1, (totalCards + cardsPerPage - 1) / cardsPerPage)
+            
+            if totalPages > 1 {
+                HStack {
+                    Button(action: {
+                        if currentPage > 0 {
+                            onPageChanged(currentPage - 1)
+                        }
+                    }) {
+                        Image(systemName: "chevron.left")
+                            .foregroundColor(currentPage > 0 ? .primary : .secondary)
+                    }
+                    .disabled(currentPage <= 0)
+                    
+                    Spacer()
+                    
+                    Text("Page \(currentPage + 1) of \(totalPages)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        if currentPage < totalPages - 1 {
+                            onPageChanged(currentPage + 1)
+                        }
+                    }) {
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(currentPage < totalPages - 1 ? .primary : .secondary)
+                    }
+                    .disabled(currentPage >= totalPages - 1)
+                }
+                .padding(.horizontal)
+            } else {
+                Text("Page 1 of 1")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
-    }
-    
-    // Legacy function - not needed with ResolvedCard architecture
-    private func getEntryForGridPosition(_ position: Int) -> DecklistEntryData? {
-        return nil // No longer used with ResolvedCard architecture
     }
     
     private func getResolvedCardForGridPosition(_ position: Int) -> ResolvedCard? {
@@ -447,19 +336,17 @@ struct GridPreviewSection: View {
 
 struct GridCardView: View {
     let resolvedCard: ResolvedCard?  // The resolved card to display
+    let availablePrintings: [String: [CardPrintingData]] // Available printings for modal
     
     @State private var imageData: Data?
     @State private var isLoadingImage = false
+    @State private var showPrintSelection = false
     
     var body: some View {
         ZStack {
-            // Background
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color(UIColor.secondarySystemBackground))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color(UIColor.separator), lineWidth: 1)
-                )
+            // Background (no borders in PDF)
+            Rectangle()
+                .fill(Color(UIColor.systemBackground))
             
             if let resolvedCard = resolvedCard {
                 if let imageData = imageData, let uiImage = UIImage(data: imageData) {
@@ -467,7 +354,6 @@ struct GridCardView: View {
                     Image(uiImage: uiImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .cornerRadius(6)
                 } else if isLoadingImage {
                     // Loading state
                     VStack(spacing: 4) {
@@ -497,9 +383,31 @@ struct GridCardView: View {
                     }
                 }
             } else {
-                // Empty grid position
-                RoundedRectangle(cornerRadius: 6)
+                // Empty grid position (no borders like PDF)
+                Rectangle()
                     .fill(Color.clear)
+            }
+        }
+        .onTapGesture {
+            if let resolvedCard = resolvedCard, 
+               let cardPrintings = availablePrintings[resolvedCard.card.name],
+               cardPrintings.count > 1 {
+                showPrintSelection = true
+            }
+        }
+        .sheet(isPresented: $showPrintSelection) {
+            if let resolvedCard = resolvedCard,
+               let cardPrintings = availablePrintings[resolvedCard.card.name] {
+                PrintSelectionModal(
+                    cardName: resolvedCard.card.name,
+                    availablePrintings: cardPrintings,
+                    currentCard: resolvedCard.card,
+                    onPrintingSelected: { selectedCard in
+                        // Modify card object in place (desktop pattern)
+                        resolvedCard.card = selectedCard
+                        resolvedCard.objectWillChange.send()
+                    }
+                )
             }
         }
         .onAppear {
@@ -550,62 +458,154 @@ struct GridCardView: View {
             isLoadingImage = true
         }
     }
+}
+
+
+// MARK: - Print Selection Modal (Desktop Pattern)
+
+struct PrintSelectionModal: View {
+    let cardName: String
+    let availablePrintings: [CardPrintingData]
+    let currentCard: CardPrintingData
+    let onPrintingSelected: (CardPrintingData) -> Void
     
-    // Legacy function - no longer used with ResolvedCard architecture
-    private func loadImageForEntry(_ entry: DecklistEntryData) {
-        // No-op: ResolvedCard architecture uses loadImageForResolvedCard instead
-    }
+    @Environment(\.dismiss) private var dismiss
     
-    private func tryLoadAnyCachedImageForCard(_ cardName: String) {
-        // For now, just return nil - this will show placeholder
-        // The real fix is to ensure availablePrintings gets populated quickly
-        // Once availablePrintings is loaded, the onChange handler will trigger loadImageForEntry again
-        imageData = nil
-        isLoadingImage = false
-    }
+    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
     
-    private func entryKey(for entry: DecklistEntryData) -> String {
-        // Use source line number if available, otherwise use name
-        if let lineNumber = entry.sourceLineNumber {
-            return "line_\(lineNumber)"
-        } else {
-            return "name_\(entry.name)"
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 16) {
+                // Header
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Select Print for \(cardName)")
+                        .font(.title2)
+                        .fontWeight(.semibold)
+                    
+                    Text("Current: \(currentCard.set.uppercased()) • \(currentCard.language.uppercased())")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Text("\(availablePrintings.count) printings available")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal)
+                
+                // Printings grid (4x4 like desktop)
+                ScrollView {
+                    LazyVGrid(columns: gridColumns, spacing: 12) {
+                        ForEach(Array(availablePrintings.enumerated()), id: \.offset) { index, printing in
+                            PrintingThumbnailView(
+                                printing: printing,
+                                isSelected: printing.set == currentCard.set && printing.language == currentCard.language,
+                                onTap: {
+                                    onPrintingSelected(printing)
+                                    dismiss()
+                                }
+                            )
+                        }
+                    }
+                    .padding()
+                }
+            }
+            .navigationTitle("Change Print")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+            }
         }
     }
 }
 
-// MARK: - ResolvedCardRow (Desktop Pattern)
-
-struct ResolvedCardRow: View {
-    @ObservedObject var resolvedCard: ResolvedCard
-    let availablePrintings: [CardPrintingData]
+struct PrintingThumbnailView: View {
+    let printing: CardPrintingData
+    let isSelected: Bool
+    let onTap: () -> Void
+    
+    @State private var imageData: Data?
+    @State private var isLoadingImage = false
     
     var body: some View {
-        HStack {
-            // Card info
-            VStack(alignment: .leading, spacing: 4) {
-                Text(resolvedCard.card.name)
-                    .font(.headline)
+        VStack(spacing: 4) {
+            // Thumbnail image
+            ZStack {
+                Rectangle()
+                    .fill(Color(UIColor.systemGray6))
+                    .aspectRatio(480.0/680.0, contentMode: .fit)
                 
-                Text("\(resolvedCard.quantity)x • \(resolvedCard.card.set.uppercased()) • \(resolvedCard.faceMode.displayName)")
-                    .font(.caption)
+                if let imageData = imageData, let uiImage = UIImage(data: imageData) {
+                    // Show cached image
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                } else if isLoadingImage {
+                    // Loading state
+                    ProgressView()
+                        .scaleEffect(0.6)
+                } else {
+                    // Placeholder
+                    VStack(spacing: 2) {
+                        Image(systemName: "photo")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        Text("Loading")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 3)
+            )
+            
+            // Set and language info
+            VStack(spacing: 1) {
+                Text(printing.set.uppercased())
+                    .font(.caption2)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+                
+                Text(printing.language.uppercased())
+                    .font(.caption2)
                     .foregroundColor(.secondary)
             }
-            
-            Spacer()
-            
-            // Print selection button (if alternatives exist)
-            if availablePrintings.count > 1 {
-                Button("Change Print") {
-                    // TODO: Show print selection modal that modifies resolvedCard.card directly
-                }
-                .buttonStyle(.bordered)
-            }
         }
-        .padding(.vertical, 8)
-        .padding(.horizontal, 12)
-        .background(Color(UIColor.secondarySystemBackground))
-        .cornerRadius(8)
+        .onTapGesture {
+            onTap()
+        }
+        .onAppear {
+            loadImage()
+        }
+    }
+    
+    private func loadImage() {
+        // Get primary image URL for this printing
+        let imageURL = printing.borderCropURL
+        
+        // Check if image is cached
+        guard ProxyGenerator.initialize() else {
+            print("Failed to initialize ProxyGenerator for thumbnail loading")
+            return
+        }
+        
+        switch ProxyGenerator.getCachedImageData(for: imageURL) {
+        case .success(let data):
+            print("✅ [PrintingThumbnailView] Using cached image for: \(printing.set)")
+            imageData = data
+            isLoadingImage = false
+        case .failure:
+            print("🔍 [PrintingThumbnailView] Image not cached yet for: \(printing.set)")
+            imageData = nil
+            isLoadingImage = true
+        }
     }
 }
 
