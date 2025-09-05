@@ -4,6 +4,7 @@ import Combine
 struct PrintSelectionView: View {
     @ObservedObject var resolvedCardsWrapper: ResolvedCardsWrapper  // Wraps the array of ResolvedCard objects
     let onGeneratePDF: () -> Void
+    let onDiscard: () -> Void
     
     @Environment(\.dismiss) private var dismiss
     @State private var availablePrintings: [String: [CardPrintingData]] = [:] // Only for print selection modal
@@ -20,76 +21,76 @@ struct PrintSelectionView: View {
     }
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 8) {
-                if resolvedCardsWrapper.cards.isEmpty {
-                    Text("No cards found in decklist")
-                        .foregroundColor(.secondary)
-                        .font(.subheadline)
-                } else {
-                    // Compact header info
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Preview & Print Selection")
-                                .font(.headline)
-                            
-                            let totalCards = resolvedCards.reduce(0) { $0 + Int($1.quantity) }
-                            Text("\(resolvedCards.count) unique cards, \(totalCards) total")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        
-                        Spacer()
-                        
+        VStack(spacing: 0) {
+            if resolvedCardsWrapper.cards.isEmpty {
+                Text("No cards found in decklist")
+                    .foregroundColor(.secondary)
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // Status messages (loading/errors) - minimal space at top
+                if isLoadingPrintings || errorMessage != nil {
+                    VStack(spacing: 4) {
                         if isLoadingPrintings {
                             HStack {
                                 ProgressView()
                                     .scaleEffect(0.7)
-                                Text("Loading...")
+                                Text("Loading printings...")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
                         }
                         
-                        Button("Reload Images") {
-                            reloadGridImages()
+                        if let errorMessage = errorMessage {
+                            Text(errorMessage)
+                                .foregroundColor(.red)
+                                .font(.caption2)
+                                .multilineTextAlignment(.center)
                         }
-                        .font(.caption)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(6)
                     }
                     .padding(.horizontal)
-                    
-                    // Large Grid Preview (fills most of screen)
-                    GridPreviewSection(
-                        resolvedCards: resolvedCards,
-                        currentPage: currentPage,
-                        availablePrintings: availablePrintings,
-                        onPageChanged: { newPage in
-                            currentPage = newPage
+                    .padding(.vertical, 8)
+                }
+                
+                // Grid Preview - takes remaining space
+                GridPreviewSection(
+                    resolvedCards: resolvedCards,
+                    currentPage: currentPage,
+                    availablePrintings: availablePrintings,
+                    onPageChanged: { newPage in
+                        currentPage = newPage
+                    }
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                
+                // Bottom buttons - takes fixed space
+                HStack(spacing: 16) {
+                    Button(action: {
+                        onDiscard()
+                        dismiss()
+                    }) {
+                        HStack {
+                            Image(systemName: "xmark")
+                            Text("Discard")
                         }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.horizontal, 4) // Minimal padding for full screen effect
-                    
-                    if let errorMessage = errorMessage {
-                        Text(errorMessage)
-                            .foregroundColor(.red)
-                            .font(.caption)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal)
+                        .foregroundColor(.red)
+                        .padding()
+                        .frame(maxWidth: .infinity)
+                        .background(Color(UIColor.secondarySystemBackground))
+                        .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(Color.red, lineWidth: 1)
+                        )
                     }
                     
-                    // Generate PDF button
                     Button(action: {
                         onGeneratePDF()
+                        dismiss()
                     }) {
                         HStack {
                             Image(systemName: "doc.fill")
-                            Text("Generate PDF with Selected Prints")
+                            Text("Print")
                         }
                         .foregroundColor(.white)
                         .padding()
@@ -97,26 +98,18 @@ struct PrintSelectionView: View {
                         .background(Color.blue)
                         .cornerRadius(10)
                     }
-                    .padding(.horizontal)
                 }
+                .padding(.horizontal)
+                .padding(.bottom)
             }
-            .padding(.vertical)
-            .navigationTitle("Print Selection")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                }
-            }
-            .onAppear {
-                loadAvailablePrintings()
-                self.startWatchingImageCache()
-            }
-            .onDisappear {
-                self.stopWatchingImageCache()
-            }
+        }
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            loadAvailablePrintings()
+            self.startWatchingImageCache()
+        }
+        .onDisappear {
+            self.stopWatchingImageCache()
         }
     }
     
@@ -265,7 +258,7 @@ struct GridPreviewSection: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Grid layout (3x3 matching desktop app, no spacing like PDF)
+            // Grid layout (3x3 matching desktop app, no spacing like PDF) - takes most space
             LazyVGrid(columns: gridColumns, spacing: 0) {
                 ForEach(0..<cardsPerPage, id: \.self) { index in
                     GridCardView(
@@ -276,47 +269,49 @@ struct GridPreviewSection: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(UIColor.systemBackground))
             
-            // Page navigation
+            // Page navigation footer - takes fixed space
             let totalCards = resolvedCards.reduce(0) { $0 + Int($1.quantity) }
             let totalPages = max(1, (totalCards + cardsPerPage - 1) / cardsPerPage)
             
             if totalPages > 1 {
-                HStack {
+                HStack(spacing: 20) {
                     Button(action: {
                         if currentPage > 0 {
                             onPageChanged(currentPage - 1)
                         }
                     }) {
-                        Image(systemName: "chevron.left")
-                            .foregroundColor(currentPage > 0 ? .primary : .secondary)
+                        Image(systemName: "chevron.left.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(currentPage > 0 ? .blue : .secondary)
                     }
                     .disabled(currentPage <= 0)
-                    
-                    Spacer()
                     
                     Text("Page \(currentPage + 1) of \(totalPages)")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                    
-                    Spacer()
                     
                     Button(action: {
                         if currentPage < totalPages - 1 {
                             onPageChanged(currentPage + 1)
                         }
                     }) {
-                        Image(systemName: "chevron.right")
-                            .foregroundColor(currentPage < totalPages - 1 ? .primary : .secondary)
+                        Image(systemName: "chevron.right.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(currentPage < totalPages - 1 ? .blue : .secondary)
                     }
                     .disabled(currentPage >= totalPages - 1)
                 }
-                .padding(.horizontal)
+                .padding(.vertical, 12)
+                .background(Color(UIColor.systemBackground))
             } else {
                 Text("Page 1 of 1")
                     .font(.caption)
                     .foregroundColor(.secondary)
+                    .padding(.vertical, 12)
+                    .background(Color(UIColor.systemBackground))
             }
         }
     }
@@ -612,6 +607,7 @@ struct PrintingThumbnailView: View {
 #Preview {
     PrintSelectionView(
         resolvedCardsWrapper: ResolvedCardsWrapper(cards: []),
-        onGeneratePDF: {}
+        onGeneratePDF: {},
+        onDiscard: {}
     )
 }

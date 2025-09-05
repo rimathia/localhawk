@@ -117,6 +117,22 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+                
+                // Hidden NavigationLink for proper navigation
+                NavigationLink(
+                    destination: PrintSelectionView(
+                        resolvedCardsWrapper: resolvedCardsWrapper,
+                        onGeneratePDF: generatePDFFromSelection,
+                        onDiscard: {
+                            showingPrintSelection = false
+                        }
+                    ),
+                    isActive: $showingPrintSelection
+                ) {
+                    EmptyView()
+                }
+                .hidden()
+                
             }
             .padding()
             .navigationTitle("LocalHawk")
@@ -139,12 +155,6 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showingAdvancedOptions) {
             AdvancedOptionsView()
-        }
-        .sheet(isPresented: $showingPrintSelection) {
-            PrintSelectionView(
-                resolvedCardsWrapper: resolvedCardsWrapper,
-                onGeneratePDF: generatePDFFromSelection
-            )
         }
         .onDisappear {
             // Background loading is now fire-and-forget, no cleanup needed
@@ -186,6 +196,7 @@ struct ContentView: View {
     
     /// Preview-first workflow with print selection
     private func startPreviewWorkflow() {
+        print("🔥 startPreviewWorkflow called")
         guard !decklistText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             errorMessage = "Please enter a decklist"
             return
@@ -193,6 +204,7 @@ struct ContentView: View {
         
         isGenerating = true
         errorMessage = nil
+        print("🔥 Starting to parse decklist...")
         
         // Use the new combined parse + background loading function
         Task(priority: .utility) {
@@ -206,12 +218,15 @@ struct ContentView: View {
                 
                 switch result {
                 case .success(let (entries, resolved)):
+                    print("🔥 Success! Got \(entries.count) entries and \(resolved.count) resolved cards")
                     decklistEntries = entries
                     resolvedCardsWrapper.cards = resolved
                     errorMessage = nil
                     showingPrintSelection = true
+                    print("🔥 Set showingPrintSelection = true")
                     // Background loading is now started automatically by the core library
                 case .failure(let error):
+                    print("🔥 Failed to parse: \(error)")
                     decklistEntries = []
                     resolvedCardsWrapper.cards = []
                     errorMessage = "Failed to parse decklist: \(error.localizedDescription)"
