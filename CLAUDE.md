@@ -125,6 +125,15 @@ cd LocalHawkiOS && open LocalHawkiOS.xcodeproj  # Open in Xcode
 
 **Never present code changes without compilation verification** - Compilation failures break user workflow and waste development time
 
+#### 🛑 PROCESS ENFORCEMENT
+**The following are BLOCKING requirements - if you skip them, STOP immediately:**
+
+1. **Before Layout/UI Changes**: Must commit working state first (see Git Workflow section)
+2. **After Code Changes**: Must verify compilation before presenting to user  
+3. **Complex Changes**: Must use TodoWrite to track steps and ensure nothing is skipped
+
+**Why written instructions fail**: Good intentions + documentation ≠ reliable behavior without forcing functions. These blocking requirements create necessary workflow interruptions.
+
 ## Code Style Guidelines
 
 ### Naming Conventions
@@ -137,14 +146,31 @@ cd LocalHawkiOS && open LocalHawkiOS.xcodeproj  # Open in Xcode
   - ❌ `_calculate_total_pages` for a method that was used but is now dead code (remove instead)
   - ❌ `_helper_function` for a function that is actively called (rename to `helper_function`)
 
-### Git Workflow (IMPORTANT)
+### Git Workflow (CRITICAL - NO EXCEPTIONS)
 
-#### Commit Guidelines
-- **ALWAYS create a git commit before major refactorings** - This prevents loss of working functionality during complex code restructuring
+#### 🛑 MANDATORY PRE-REFACTORING CHECKLIST
+**Before ANY of these changes, you MUST commit working state first:**
+- Layout changes or UI restructuring 
+- Moving code between files/modules
+- Changing function signatures or data structures
+- Adding/removing large code sections
+- Any change that might break existing functionality
+
+**MANDATORY STEPS:**
+1. `git status` - Check current state
+2. `git add -A && git commit -m "working state: [describe current functionality]"`  
+3. ONLY THEN proceed with risky changes
+
+**🚨 FAILURE RECOVERY**: If you ignored this and broke working code:
+- Stop immediately, don't try to "fix forward"  
+- Check `git status` for any recovery options
+- Consider reverting and starting over with proper process
+
+#### Commit Guidelines  
 - Use descriptive commit messages that explain what is working at that state
-- Example commit messages: "grid preview working with print selection", "background loading functional", "complete GUI integration"
-- Before major architectural changes (moving code between modules, removing/adding large sections), ensure the current state is committed first
-- This allows easy recovery if refactoring goes wrong or functionality is accidentally removed
+- Example messages: "print selection working with image display", "background loading functional", "layout responsive and buttons visible"
+- Every commit should represent a stable, working state
+- Commit frequency: Better to over-commit than under-commit during complex changes
 
 #### File Management
 - **NEVER add files to version control without asking first** - Always verify whether a file should be tracked before committing
