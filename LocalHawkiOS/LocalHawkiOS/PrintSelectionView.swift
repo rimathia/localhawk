@@ -22,50 +22,26 @@ struct PrintSelectionView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-                if resolvedCardsWrapper.cards.isEmpty {
-                    Text("No cards found in decklist")
-                        .foregroundColor(.secondary)
-                        .font(.subheadline)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                } else {
-                    // Status messages (loading/errors) - minimal space at top
-                    if isLoadingPrintings || errorMessage != nil {
-                        VStack(spacing: 4) {
-                            if isLoadingPrintings {
-                                HStack {
-                                    ProgressView()
-                                        .scaleEffect(0.7)
-                                    Text("Loading printings...")
-                                        .font(.caption2)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            
-                            if let errorMessage = errorMessage {
-                                Text(errorMessage)
-                                    .foregroundColor(.red)
-                                    .font(.caption2)
-                                    .multilineTextAlignment(.center)
-                            }
-                        }
-                        .padding(.horizontal)
-                        .padding(.vertical, 8)
+            if resolvedCardsWrapper.cards.isEmpty {
+                Text("No cards found in decklist")
+                    .foregroundColor(.secondary)
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // 3x3 Grid - takes remaining space
+                GridPreviewSection(
+                    resolvedCards: resolvedCards,
+                    currentPage: currentPage,
+                    availablePrintings: availablePrintings,
+                    onPageChanged: { newPage in
+                        currentPage = newPage
                     }
-                    
-                    // Grid Preview - takes remaining space above buttons
-                    GridPreviewSection(
-                        resolvedCards: resolvedCards,
-                        currentPage: currentPage,
-                        availablePrintings: availablePrintings,
-                        onPageChanged: { newPage in
-                            currentPage = newPage
-                        }
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: 400) // Limit height so buttons are visible
-                    
-                    // Bottom buttons - always visible at bottom
-                    HStack(spacing: 16) {
-                        Button(action: {
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                
+                // Bottom buttons - fixed at bottom
+                HStack(spacing: 16) {
+                    Button(action: {
                         onDiscard()
                         dismiss()
                     }) {
@@ -74,7 +50,8 @@ struct PrintSelectionView: View {
                             Text("Discard")
                         }
                         .foregroundColor(.red)
-                        .padding()
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 16)
                         .frame(maxWidth: .infinity)
                         .background(Color(UIColor.secondarySystemBackground))
                         .cornerRadius(10)
@@ -93,23 +70,19 @@ struct PrintSelectionView: View {
                             Text("Print")
                         }
                         .foregroundColor(.white)
-                        .padding()
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 16)
                         .frame(maxWidth: .infinity)
                         .background(Color.blue)
                         .cornerRadius(10)
                     }
                 }
-                .padding(.horizontal)
-                .padding(.bottom)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
                 .background(Color(UIColor.systemBackground))
-                .overlay(
-                    Rectangle()
-                        .frame(height: 1)
-                        .foregroundColor(Color(UIColor.separator)),
-                    alignment: .top
-                )
             }
         }
+        .navigationTitle("Preview")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             loadAvailablePrintings()
