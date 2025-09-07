@@ -22,50 +22,50 @@ struct PrintSelectionView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            if resolvedCardsWrapper.cards.isEmpty {
-                Text("No cards found in decklist")
-                    .foregroundColor(.secondary)
-                    .font(.subheadline)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                // Status messages (loading/errors) - minimal space at top
-                if isLoadingPrintings || errorMessage != nil {
-                    VStack(spacing: 4) {
-                        if isLoadingPrintings {
-                            HStack {
-                                ProgressView()
-                                    .scaleEffect(0.7)
-                                Text("Loading printings...")
+                if resolvedCardsWrapper.cards.isEmpty {
+                    Text("No cards found in decklist")
+                        .foregroundColor(.secondary)
+                        .font(.subheadline)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    // Status messages (loading/errors) - minimal space at top
+                    if isLoadingPrintings || errorMessage != nil {
+                        VStack(spacing: 4) {
+                            if isLoadingPrintings {
+                                HStack {
+                                    ProgressView()
+                                        .scaleEffect(0.7)
+                                    Text("Loading printings...")
+                                        .font(.caption2)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            
+                            if let errorMessage = errorMessage {
+                                Text(errorMessage)
+                                    .foregroundColor(.red)
                                     .font(.caption2)
-                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
                             }
                         }
-                        
-                        if let errorMessage = errorMessage {
-                            Text(errorMessage)
-                                .foregroundColor(.red)
-                                .font(.caption2)
-                                .multilineTextAlignment(.center)
+                        .padding(.horizontal)
+                        .padding(.vertical, 8)
+                    }
+                    
+                    // Grid Preview - takes remaining space above buttons
+                    GridPreviewSection(
+                        resolvedCards: resolvedCards,
+                        currentPage: currentPage,
+                        availablePrintings: availablePrintings,
+                        onPageChanged: { newPage in
+                            currentPage = newPage
                         }
-                    }
-                    .padding(.horizontal)
-                    .padding(.vertical, 8)
-                }
-                
-                // Grid Preview - takes remaining space
-                GridPreviewSection(
-                    resolvedCards: resolvedCards,
-                    currentPage: currentPage,
-                    availablePrintings: availablePrintings,
-                    onPageChanged: { newPage in
-                        currentPage = newPage
-                    }
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                
-                // Bottom buttons - takes fixed space
-                HStack(spacing: 16) {
-                    Button(action: {
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: 400) // Limit height so buttons are visible
+                    
+                    // Bottom buttons - always visible at bottom
+                    HStack(spacing: 16) {
+                        Button(action: {
                         onDiscard()
                         dismiss()
                     }) {
@@ -101,6 +101,13 @@ struct PrintSelectionView: View {
                 }
                 .padding(.horizontal)
                 .padding(.bottom)
+                .background(Color(UIColor.systemBackground))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 1)
+                        .foregroundColor(Color(UIColor.separator)),
+                    alignment: .top
+                )
             }
         }
         .navigationBarTitleDisplayMode(.inline)
@@ -390,7 +397,7 @@ struct GridCardView: View {
                 showPrintSelection = true
             }
         }
-        .sheet(isPresented: $showPrintSelection) {
+        .fullScreenCover(isPresented: $showPrintSelection) {
             if let resolvedCard = resolvedCard,
                let cardPrintings = availablePrintings[resolvedCard.card.name] {
                 PrintSelectionModal(
@@ -398,9 +405,17 @@ struct GridCardView: View {
                     availablePrintings: cardPrintings,
                     currentCard: resolvedCard.card,
                     onPrintingSelected: { selectedCard in
+                        print("✅ [PrintSelectionModal] Selected new printing: \(selectedCard.set) (\(selectedCard.language)) for \(resolvedCard.card.name)")
+                        print("🔍 [PrintSelectionModal] Before change: \(resolvedCard.card.set) (\(resolvedCard.card.language))")
                         // Modify card object in place (desktop pattern)
                         resolvedCard.card = selectedCard
+                        print("🔍 [PrintSelectionModal] After change: \(resolvedCard.card.set) (\(resolvedCard.card.language))")
                         resolvedCard.objectWillChange.send()
+                        print("🔄 [PrintSelectionModal] Updated resolvedCard and sent objectWillChange notification")
+                        
+                        // Force manual refresh of all grid views for this card
+                        NotificationCenter.default.post(name: Notification.Name("ImageCacheUpdated"), object: nil)
+                        print("📡 [PrintSelectionModal] Sent manual refresh notification")
                     }
                 )
             }
@@ -413,8 +428,15 @@ struct GridCardView: View {
                 print("GridCardView onAppear with nil resolved card")
             }
         }
-        .onChange(of: resolvedCard?.card) { _ in
+        .onChange(of: resolvedCard?.card.set) { _ in
             if let resolvedCard = resolvedCard {
+                print("🔄 [GridCardView] Detected card set change for: \(resolvedCard.card.name) -> \(resolvedCard.card.set) (\(resolvedCard.card.language))")
+                loadImageForResolvedCard(resolvedCard)
+            }
+        }
+        .onChange(of: resolvedCard?.card.language) { _ in
+            if let resolvedCard = resolvedCard {
+                print("🔄 [GridCardView] Detected card language change for: \(resolvedCard.card.name) -> \(resolvedCard.card.set) (\(resolvedCard.card.language))")
                 loadImageForResolvedCard(resolvedCard)
             }
         }
@@ -427,7 +449,7 @@ struct GridCardView: View {
     }
     
     private func loadImageForResolvedCard(_ resolvedCard: ResolvedCard) {
-        print("Loading image for resolved card: \(resolvedCard.card.name)")
+        print("🖼️ [GridCardView] Loading image for resolved card: \(resolvedCard.card.name) (\(resolvedCard.card.set))")
         
         // Get the primary image URL for this resolved card based on face mode
         let imageUrls = resolvedCard.getImageUrls()
@@ -470,8 +492,8 @@ struct PrintSelectionModal: View {
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 16) {
-                // Header
+            VStack(spacing: 0) {
+                // Header - fixed size
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Select Print for \(cardName)")
                         .font(.title2)
@@ -487,8 +509,11 @@ struct PrintSelectionModal: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal)
+                .padding(.vertical, 16)
                 
-                // Printings grid (4x4 like desktop)
+                Divider()
+                
+                // Printings grid - takes remaining space and scrolls
                 ScrollView {
                     LazyVGrid(columns: gridColumns, spacing: 12) {
                         ForEach(Array(availablePrintings.enumerated()), id: \.offset) { index, printing in
@@ -504,6 +529,7 @@ struct PrintSelectionModal: View {
                     }
                     .padding()
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationTitle("Change Print")
             .navigationBarTitleDisplayMode(.inline)
@@ -574,6 +600,7 @@ struct PrintingThumbnailView: View {
             }
         }
         .onTapGesture {
+            print("🖱️ [PrintingThumbnailView] Tapped on printing: \(printing.set) (\(printing.language))")
             onTap()
         }
         .onAppear {

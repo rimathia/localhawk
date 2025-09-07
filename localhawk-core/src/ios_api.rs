@@ -381,3 +381,47 @@ pub fn get_or_fetch_image_bytes_sync(url: &str) -> Result<Vec<u8>, ProxyError> {
     Ok(image_bytes)
 }
 
+impl ProxyGenerator {
+    /// Load all printings for all entries (iOS sync version of Phase 2)
+    /// This should be called after parsing to populate the print selection modal with cached images
+    pub fn load_alternative_printings_sync(entries: &[DecklistEntry]) -> Result<usize, ProxyError> {
+        let mut images_loaded = 0;
+        
+        println!("🔄 [iOS API] Starting all printings loading for {} entries", entries.len());
+        
+        for (entry_idx, entry) in entries.iter().enumerate() {
+            println!("🔍 [iOS API] Loading all printings for entry {}/{}: '{}'", 
+                entry_idx + 1, entries.len(), entry.name);
+            
+            // Search for all available printings
+            match Self::search_card_sync(&entry.name) {
+                Ok(search_result) => {
+                    println!("  Found {} total printings", search_result.cards.len());
+                    
+                    // Load all printings (cache will handle duplicates efficiently)
+                    for card in &search_result.cards {
+                        // Load front image for each printing
+                        match get_or_fetch_image_bytes_sync(&card.border_crop) {
+                            Ok(_) => {
+                                images_loaded += 1;
+                                println!("  ✅ Cached printing: '{}' ({}) [{}]", 
+                                    card.name, card.set.to_uppercase(), card.language);
+                            }
+                            Err(e) => {
+                                println!("  ❌ Failed to cache printing '{}' ({}): {}", 
+                                    card.name, card.set.to_uppercase(), e);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("  ❌ Failed to search for printings of '{}': {}", entry.name, e);
+                }
+            }
+        }
+        
+        println!("✅ [iOS API] All printings loading complete: {} images processed", images_loaded);
+        Ok(images_loaded)
+    }
+}
+

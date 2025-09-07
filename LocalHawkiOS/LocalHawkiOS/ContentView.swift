@@ -247,9 +247,22 @@ struct ContentView: View {
         errorMessage = nil
         pdfData = nil
         
-        // Use Task with appropriate priority for PDF generation
+        // Use Task with appropriate priority for PDF generation  
         Task(priority: .utility) {
-            let result = ProxyGenerator.generatePDFFromEntries(decklistEntries)
+            // Convert current resolved cards back to decklist entries (with updated print selections)
+            let updatedEntries = resolvedCardsWrapper.cards.map { resolvedCard in
+                DecklistEntryData(
+                    multiple: Int32(resolvedCard.quantity),
+                    name: resolvedCard.card.name,
+                    set: resolvedCard.card.set,
+                    language: resolvedCard.card.language,
+                    faceMode: resolvedCard.faceMode,
+                    sourceLineNumber: nil
+                )
+            }
+            print("🎯 [ContentView] Generating PDF from \(updatedEntries.count) updated entries with selected printings")
+            
+            let result = ProxyGenerator.generatePDFFromEntries(updatedEntries)
             
             await MainActor.run {
                 isGenerating = false

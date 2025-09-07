@@ -103,6 +103,28 @@ cd LocalHawkiOS && open LocalHawkiOS.xcodeproj  # Open in Xcode
 - `cargo update` - Update dependencies in Cargo.lock
 - **ALWAYS run `cargo fmt` as the final step after making any code changes** - This ensures consistent code formatting across the entire codebase
 
+### Compilation Verification (CRITICAL)
+**ALWAYS verify code compiles after making changes** - This prevents presenting broken code to users and maintains development flow
+
+#### Desktop (Rust)
+- `cargo check` - Fast compilation check without building
+- `cargo build` - Full compilation verification
+- `cargo test` - Ensure tests still pass after changes
+
+#### iOS App (Swift + Rust FFI)
+- `./build_ios.sh` - Rebuild Rust libraries for iOS
+- `cd LocalHawkiOS && xcodebuild -project LocalHawkiOS.xcodeproj -scheme LocalHawkiOS -destination 'platform=iOS Simulator,name=iPad Air 11-inch (M3)' build` - Verify Swift code compiles
+- **Critical for FFI changes**: Both Rust and Swift sides must be verified
+
+#### Workflow
+1. Make code changes
+2. **Immediately verify compilation** using appropriate commands above
+3. Fix any compilation errors before proceeding
+4. Format code with `cargo fmt`
+5. Only then present working code
+
+**Never present code changes without compilation verification** - Compilation failures break user workflow and waste development time
+
 ## Code Style Guidelines
 
 ### Naming Conventions

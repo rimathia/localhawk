@@ -1432,17 +1432,18 @@ pub extern "C" fn localhawk_parse_and_start_background_loading(
         return FFIError::Success as c_int;
     }
 
-    // Resolve entries to actual cards for background loading (step 2) - fire and forget
+    // Phase 1: Selected printings are already loaded by resolve_decklist_entries_to_cards_sync above
+    // Phase 2: Load all printings in background thread for print selection modal
     let entries_for_bg = entries.clone();
-    println!("🔧 FFI: About to spawn background thread for {} entries", entries_for_bg.len());
+    println!("🔧 FFI: About to spawn alternative printings loading thread for {} entries", entries_for_bg.len());
     std::thread::spawn(move || {
-        println!("🧵 FFI: Background loading thread started for {} entries", entries_for_bg.len());
-        match crate::ios_api::ProxyGenerator::resolve_decklist_entries_to_cards_sync(&entries_for_bg) {
-            Ok(cards) => {
-                println!("✅ FFI: Background loading completed successfully, got {} cards", cards.len());
+        println!("🧵 FFI: Alternative printings loading thread started for {} entries", entries_for_bg.len());
+        match crate::ios_api::ProxyGenerator::load_alternative_printings_sync(&entries_for_bg) {
+            Ok(count) => {
+                println!("✅ FFI: Alternative printings loading completed successfully, {} images processed", count);
             }
             Err(e) => {
-                println!("❌ FFI: Background loading failed: {:?}", e);
+                println!("❌ FFI: Alternative printings loading failed: {:?}", e);
             }
         }
     });
