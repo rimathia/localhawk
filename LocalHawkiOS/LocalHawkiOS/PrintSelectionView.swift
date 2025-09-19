@@ -23,12 +23,13 @@ struct PrintSelectionView: View {
     var body: some View {
         VStack(spacing: 0) {
             if resolvedCardsWrapper.cards.isEmpty {
+                Spacer()
                 Text("No cards found in decklist")
                     .foregroundColor(.secondary)
                     .font(.subheadline)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Spacer()
             } else {
-                // 3x3 Grid - takes remaining space
+                // 3x3 Grid - natural size only
                 GridPreviewSection(
                     resolvedCards: resolvedCards,
                     currentPage: currentPage,
@@ -37,9 +38,12 @@ struct PrintSelectionView: View {
                         currentPage = newPage
                     }
                 )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
                 
-                // Bottom buttons - fixed at bottom
+                // Spacer pushes buttons to bottom
+                Spacer()
+                
+                // Bottom buttons - natural size at bottom
                 HStack(spacing: 16) {
                     Button(action: {
                         onDiscard()
