@@ -30,7 +30,9 @@
       "Bash(rustup target:*)",
       "Bash(./build_ios.sh)",
       "Bash(cargo tree:*)",
-      "Bash(swiftc:*)"
+      "Bash(swiftc:*)",
+      "Read(//Users/mathiasritzmann/Library/vibe/ios_layout/**)",
+      "Read(//Users/mathiasritzmann/Library/vibe/**)"
     ],
     "deny": []
   }

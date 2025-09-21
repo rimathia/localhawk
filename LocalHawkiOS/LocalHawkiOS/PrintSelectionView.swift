@@ -236,28 +236,52 @@ struct GridPreviewSection: View {
     let currentPage: Int
     let availablePrintings: [String: [CardPrintingData]]
     let onPageChanged: (Int) -> Void
-    
-    private let gridColumns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 3)
+
     private let cardsPerPage = 9
-    
+    private let aspectRatio = 480.0/680.0
+
     var body: some View {
         VStack(spacing: 0) {
             // Grid layout (3x3 matching desktop app, no spacing like PDF) - takes most space
-            LazyVGrid(columns: gridColumns, spacing: 0) {
-                ForEach(0..<cardsPerPage, id: \.self) { index in
-                    GridCardView(
-                        resolvedCard: getResolvedCardForGridPosition(index),
-                        availablePrintings: availablePrintings
-                    )
-                    .aspectRatio(480.0/680.0, contentMode: .fit) // Magic card aspect ratio
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            GeometryReader { geometry in
+                let availableWidth = geometry.size.width
+                let availableHeight = geometry.size.height
+
+                // Calculate the best fit for 3x3 grid with aspect ratio (GridView2 logic)
+                let cellWidthFromWidth = availableWidth / 3.0
+                let cellHeightFromWidth = cellWidthFromWidth / aspectRatio
+                let totalHeightFromWidth = cellHeightFromWidth * 3.0
+
+                let cellHeightFromHeight = availableHeight / 3.0
+                let cellWidthFromHeight = cellHeightFromHeight * aspectRatio
+
+                // Choose the constraint that fits
+                let (cellWidth, cellHeight) = totalHeightFromWidth <= availableHeight
+                    ? (cellWidthFromWidth, cellHeightFromWidth)
+                    : (cellWidthFromHeight, cellHeightFromHeight)
+
+                // Use calculated dimensions with fixed grid items
+                let gridColumns = Array(repeating: GridItem(.fixed(cellWidth), spacing: 0), count: 3)
+
+                LazyVGrid(columns: gridColumns, spacing: 0) {
+                    ForEach(0..<cardsPerPage, id: \.self) { index in
+                        GridCardView(
+                            resolvedCard: getResolvedCardForGridPosition(index),
+                            availablePrintings: availablePrintings
+                        )
+                        .frame(width: cellWidth, height: cellHeight)
+                    }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color(UIColor.systemBackground))
             
             // Page navigation footer - takes fixed space
-            let totalCards = resolvedCards.reduce(0) { $0 + Int($1.quantity) }
+            let totalCards = resolvedCards.reduce(0) { total, resolvedCard in
+                let imageUrls = resolvedCard.getImageUrls()
+                let imagesPerCard = imageUrls.count
+                return total + (Int(resolvedCard.quantity) * imagesPerCard)
+            }
             let totalPages = max(1, (totalCards + cardsPerPage - 1) / cardsPerPage)
             
             if totalPages > 1 {
@@ -301,14 +325,17 @@ struct GridPreviewSection: View {
     }
     
     private func getResolvedCardForGridPosition(_ position: Int) -> ResolvedCard? {
-        // Expand resolved cards based on quantity (e.g., 4x Lightning Bolt = 4 grid positions)
+        // Use Rust expansion logic to ensure 100% consistency with PDF generation
         let expandedCards = resolvedCards.flatMap { resolvedCard in
-            Array(repeating: resolvedCard, count: Int(resolvedCard.quantity))
+            // Call Rust FFI to get exact same expansion as PDF generation
+            let expandedImageUrls = ProxyGenerator.expandSingleCard(resolvedCard)
+            // Each image URL corresponds to one grid position, all pointing to the same ResolvedCard
+            return Array(repeating: resolvedCard, count: expandedImageUrls.count)
         }
-        
+
         let startIndex = currentPage * cardsPerPage
         let targetIndex = startIndex + position
-        
+
         return targetIndex < expandedCards.count ? expandedCards[targetIndex] : nil
     }
 }

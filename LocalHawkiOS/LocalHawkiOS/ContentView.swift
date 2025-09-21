@@ -8,9 +8,9 @@ struct ContentView: View {
 1 Counterspell [7ED]
 // comments are ignored
 1 Memory Lapse [ja]
-1 kabira takedown
-1 kabira plateau
-1 cut // ribbons (pakh)
+4 kabira takedown
+4 kabira plateau
+3 cut // ribbons (pakh)
 """
     @State private var isGenerating = false
     @State private var pdfData: Data?
@@ -30,10 +30,29 @@ struct ContentView: View {
         NavigationView {
             VStack(spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Decklist")
-                        .font(.headline)
-                        .foregroundColor(.primary)
-                    
+                    HStack {
+                        Text("Decklist")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+
+                        Spacer()
+
+                        HStack(spacing: 8) {
+                            Text("Double Faced Cards:")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+
+                            Picker("Face Mode", selection: $globalFaceMode) {
+                                ForEach(DoubleFaceMode.allCases, id: \.self) { mode in
+                                    Text(mode.displayName).tag(mode)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                        }
+                    }
+
                     TextEditor(text: $decklistText)
                         .font(.system(.body, design: .monospaced))
                         .padding(8)
@@ -242,12 +261,12 @@ struct ContentView: View {
             showingPrintSelection = false
             return
         }
-        
+
         isGenerating = true
         errorMessage = nil
         pdfData = nil
-        
-        // Use Task with appropriate priority for PDF generation  
+
+        // Use Task with appropriate priority for PDF generation
         Task(priority: .utility) {
             // Convert current resolved cards back to decklist entries (with updated print selections)
             let updatedEntries = resolvedCardsWrapper.cards.map { resolvedCard in
@@ -261,7 +280,23 @@ struct ContentView: View {
                 )
             }
             print("🎯 [ContentView] Generating PDF from \(updatedEntries.count) updated entries with selected printings")
-            
+
+            // Debug logging: Compare with preview expansion
+            print("🔍 [ContentView] PDF Generation Input:")
+            for (i, entry) in updatedEntries.enumerated() {
+                print("  [\(i)] '\(entry.name)' (\(entry.set ?? "any")) qty=\(entry.multiple) face=\(entry.faceMode)")
+            }
+
+            print("🔍 [ContentView] Preview Expansion would generate:")
+            let previewExpansionUrls = resolvedCardsWrapper.cards.flatMap { resolvedCard in
+                let expandedImageUrls = ProxyGenerator.expandSingleCard(resolvedCard)
+                return expandedImageUrls
+            }
+            print("  Total preview URLs: \(previewExpansionUrls.count)")
+            for (i, url) in previewExpansionUrls.enumerated() {
+                print("  [\(i)] \(url)")
+            }
+
             let result = ProxyGenerator.generatePDFFromEntries(updatedEntries)
             
             await MainActor.run {

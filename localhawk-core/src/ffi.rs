@@ -2035,6 +2035,137 @@ pub(crate) fn notify_image_cache_dispatch_source() {
     }
 }
 
+/// Expand a single card entry to image URLs using the same logic as PDF generation
+/// This ensures the preview matches the PDF exactly
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_expand_single_card(
+    name: *const c_char,
+    set: *const c_char,
+    language: *const c_char,
+    border_crop: *const c_char,
+    border_crop_back: *const c_char, // nullable
+    quantity: u32,
+    face_mode: i32,
+    out_urls: *mut *mut *mut c_char,
+    out_count: *mut usize,
+) -> c_int {
+    if name.is_null() || set.is_null() || language.is_null() || border_crop.is_null()
+       || out_urls.is_null() || out_count.is_null() {
+        return FFIError::NullPointer as c_int;
+    }
+
+    // Convert C strings to Rust strings
+    let name_str = match unsafe { CStr::from_ptr(name).to_str() } {
+        Ok(s) => s.to_string(),
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    let set_str = match unsafe { CStr::from_ptr(set).to_str() } {
+        Ok(s) => s.to_string(),
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    let language_str = match unsafe { CStr::from_ptr(language).to_str() } {
+        Ok(s) => s.to_string(),
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    let border_crop_str = match unsafe { CStr::from_ptr(border_crop).to_str() } {
+        Ok(s) => s.to_string(),
+        Err(_) => return FFIError::InvalidInput as c_int,
+    };
+
+    let border_crop_back_str = if border_crop_back.is_null() {
+        None
+    } else {
+        match unsafe { CStr::from_ptr(border_crop_back).to_str() } {
+            Ok(s) => Some(s.to_string()),
+            Err(_) => return FFIError::InvalidInput as c_int,
+        }
+    };
+
+    let face_mode_enum = match face_mode {
+        0 => DoubleFaceMode::FrontOnly,
+        1 => DoubleFaceMode::BackOnly,
+        2 => DoubleFaceMode::BothSides,
+        _ => return FFIError::InvalidInput as c_int,
+    };
+
+    // Create Rust Card
+    let back_side = if let Some(back_url) = border_crop_back_str {
+        Some(crate::scryfall::models::BackSide::DfcBack {
+            image_url: back_url,
+            name: format!("{} // Back", name_str), // Simple back name
+        })
+    } else {
+        None
+    };
+
+    // Log before using the values
+    println!("🔍 [FFI] expand_single_card: '{}' qty={} face_mode={:?}",
+             name_str, quantity, face_mode_enum);
+
+    let card = crate::scryfall::models::Card {
+        name: name_str,
+        set: set_str,
+        language: language_str,
+        border_crop: border_crop_str,
+        back_side,
+    };
+
+    // Use the existing expansion logic
+    let cards = vec![(card, quantity, face_mode_enum)];
+    let image_urls = crate::ProxyGenerator::expand_cards_to_image_urls(&cards);
+
+    // Log the result
+    println!("🔍 [FFI] expand_single_card result: {} URLs", image_urls.len());
+    for (i, url) in image_urls.iter().enumerate() {
+        println!("  [{}] {}", i, url);
+    }
+
+    // Convert image URLs to C strings
+    let mut c_urls = Vec::new();
+    for url in &image_urls {
+        match CString::new(url.as_str()) {
+            Ok(c_str) => c_urls.push(c_str.into_raw()),
+            Err(_) => {
+                // Clean up already allocated strings
+                for c_url in c_urls {
+                    unsafe { let _ = CString::from_raw(c_url); }
+                }
+                return FFIError::OutOfMemory as c_int;
+            }
+        }
+    }
+
+    // Allocate array for C string pointers
+    let urls_array = c_urls.into_boxed_slice();
+    let urls_ptr = Box::into_raw(urls_array);
+
+    unsafe {
+        *out_urls = urls_ptr as *mut *mut c_char;
+        *out_count = image_urls.len();
+    }
+
+    FFIError::Success as c_int
+}
+
+/// Free the image URLs array returned by localhawk_expand_single_card
+#[unsafe(no_mangle)]
+pub extern "C" fn localhawk_free_image_urls(urls: *mut *mut c_char, count: usize) {
+    if !urls.is_null() {
+        unsafe {
+            for i in 0..count {
+                let url_ptr = *urls.add(i);
+                if !url_ptr.is_null() {
+                    let _ = CString::from_raw(url_ptr);
+                }
+            }
+            let _ = Box::from_raw(std::slice::from_raw_parts_mut(urls, count));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

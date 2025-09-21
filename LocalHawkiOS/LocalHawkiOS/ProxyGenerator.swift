@@ -1084,4 +1084,110 @@ class ProxyGenerator {
     static func isBackgroundLoadingFinished(for handleId: BackgroundLoadingHandle) -> Bool {
         return localhawk_is_background_loading_finished(BackgroundLoadHandleId(handleId)) == 1
     }
+
+    // MARK: - Card Expansion Functions
+
+    /// Expand a single resolved card to its image URLs using Rust logic.
+    /// This ensures 100% consistency with PDF generation.
+    /// - Parameter resolvedCard: The resolved card to expand
+    /// - Returns: Array of image URLs in the exact same order as PDF generation
+    static func expandSingleCard(_ resolvedCard: ResolvedCard) -> [String] {
+        // Log the input for debugging
+        print("🍎 [Swift] expandSingleCard: '\(resolvedCard.card.name)' qty=\(resolvedCard.quantity) face_mode=\(resolvedCard.faceMode)")
+
+        // Ensure initialization
+        guard initialize() else {
+            return []
+        }
+
+        // Prepare C strings
+        guard let nameCString = resolvedCard.card.name.cString(using: .utf8),
+              let setCString = resolvedCard.card.set.cString(using: .utf8),
+              let languageCString = resolvedCard.card.language.cString(using: .utf8),
+              let borderCropCString = resolvedCard.card.borderCropURL.cString(using: .utf8) else {
+            return []
+        }
+
+        // Prepare back side URL (nullable)
+        let backSideResult: Int32
+        if let backSideURL = resolvedCard.card.backSideURL,
+           let backSideCString = backSideURL.cString(using: .utf8) {
+            var urlsPtr: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+            var count: size_t = 0
+
+            backSideResult = localhawk_expand_single_card(
+                nameCString,
+                setCString,
+                languageCString,
+                borderCropCString,
+                backSideCString,
+                resolvedCard.quantity,
+                resolvedCard.faceMode.rawValue,
+                &urlsPtr,
+                &count
+            )
+
+            guard backSideResult == 0, let urlsArray = urlsPtr, count > 0 else {
+                return []
+            }
+
+            // Convert C strings to Swift strings
+            var imageUrls: [String] = []
+            for i in 0..<count {
+                if let cString = urlsArray[i] {
+                    let url = String(cString: cString)
+                    imageUrls.append(url)
+                }
+            }
+
+            // Free the allocated memory
+            localhawk_free_image_urls(urlsArray, count)
+
+            print("🍎 [Swift] expandSingleCard result (with back): \(imageUrls.count) URLs")
+            for (i, url) in imageUrls.enumerated() {
+                print("  [\(i)] \(url)")
+            }
+
+            return imageUrls
+        } else {
+            // No back side URL - pass nil
+            var urlsPtr: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+            var count: size_t = 0
+
+            backSideResult = localhawk_expand_single_card(
+                nameCString,
+                setCString,
+                languageCString,
+                borderCropCString,
+                nil,
+                resolvedCard.quantity,
+                resolvedCard.faceMode.rawValue,
+                &urlsPtr,
+                &count
+            )
+
+            guard backSideResult == 0, let urlsArray = urlsPtr, count > 0 else {
+                return []
+            }
+
+            // Convert C strings to Swift strings
+            var imageUrls: [String] = []
+            for i in 0..<count {
+                if let cString = urlsArray[i] {
+                    let url = String(cString: cString)
+                    imageUrls.append(url)
+                }
+            }
+
+            // Free the allocated memory
+            localhawk_free_image_urls(urlsArray, count)
+
+            print("🍎 [Swift] expandSingleCard result (no back): \(imageUrls.count) URLs")
+            for (i, url) in imageUrls.enumerated() {
+                print("  [\(i)] \(url)")
+            }
+
+            return imageUrls
+        }
+    }
 }

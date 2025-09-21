@@ -205,9 +205,21 @@ impl ProxyGenerator {
     where
         F: FnMut(usize, usize),
     {
+        println!("🦀 [Rust] generate_pdf_from_entries_sync received {} entries:", entries.len());
+        for (i, entry) in entries.iter().enumerate() {
+            let set_str = entry.set.as_deref().unwrap_or("any");
+            let lang_str = entry.lang.as_deref().unwrap_or("any");
+            println!("  [{}] '{}' ({}) [{}] x{} face={:?}", i, entry.name, set_str, lang_str, entry.multiple, entry.face_mode);
+        }
+
         // Convert entries to cards using sync API
         let cards = Self::resolve_decklist_entries_to_cards_sync(entries)?;
-        
+
+        println!("🦀 [Rust] resolved to {} cards:", cards.len());
+        for (i, (card, qty, face_mode)) in cards.iter().enumerate() {
+            println!("  [{}] '{}' ({}) [{}] x{} face={:?}", i, card.name, card.set, card.language, qty, face_mode);
+        }
+
         // Use existing PDF generation logic (mostly pure, just needs sync image fetching)
         Self::generate_pdf_from_cards_with_face_modes_sync(&cards, options, progress_callback)
     }
@@ -225,7 +237,12 @@ impl ProxyGenerator {
         
         // Expand cards to image URLs using shared logic from main ProxyGenerator
         let image_urls = crate::ProxyGenerator::expand_cards_to_image_urls(cards);
-        
+
+        println!("🦀 [Rust] PDF expansion generated {} image URLs:", image_urls.len());
+        for (i, url) in image_urls.iter().enumerate() {
+            println!("  [{}] {}", i, url);
+        }
+
         let total_images = image_urls.len();
         progress_callback(0, total_images);
         

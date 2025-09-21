@@ -332,6 +332,50 @@ int32_t localhawk_generate_pdf_from_entries(
 );
 
 /**
+ * Expand a single resolved card to its image URLs using Rust logic.
+ * This ensures 100% consistency with PDF generation.
+ *
+ * @param name Card name
+ * @param set Set code
+ * @param language Language code
+ * @param border_crop Front face image URL
+ * @param border_crop_back Back face image URL (nullable for single-faced cards)
+ * @param quantity Number of copies
+ * @param face_mode Face mode: 0=FrontOnly, 1=BackOnly, 2=BothSides
+ * @param out_urls Pointer to array of image URL strings (allocated by function)
+ * @param out_count Pointer to size_t that will receive the URL count
+ * @return LOCALHAWK_SUCCESS on success, negative error code on failure
+ *
+ * Memory Management:
+ * - The output array and all strings are allocated by this function
+ * - Caller must call localhawk_free_image_urls to free the memory
+ * - If function fails, no memory is allocated
+ */
+int localhawk_expand_single_card(
+    const char* name,
+    const char* set,
+    const char* language,
+    const char* border_crop,
+    const char* border_crop_back,
+    uint32_t quantity,
+    int32_t face_mode,
+    char*** out_urls,
+    size_t* out_count
+);
+
+/**
+ * Free memory allocated by localhawk_expand_single_card.
+ *
+ * @param urls Array of image URL strings returned by localhawk_expand_single_card
+ * @param count Number of URLs in the array
+ *
+ * Memory Management:
+ * - Frees all memory associated with the array including strings
+ * - Safe to call with NULL array pointer
+ */
+void localhawk_free_image_urls(char** urls, size_t count);
+
+/**
  * Get cached image bytes for a given URL.
  * 
  * @param image_url_cstr Null-terminated C string containing the image URL
