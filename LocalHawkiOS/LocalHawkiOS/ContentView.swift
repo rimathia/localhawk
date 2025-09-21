@@ -56,6 +56,8 @@ struct ContentView: View {
 
                     TextEditor(text: $decklistText)
                         .font(.system(.body, design: .monospaced))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
                         .padding(8)
                         .background(Color(UIColor.secondarySystemBackground))
                         .cornerRadius(8)
