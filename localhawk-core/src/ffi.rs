@@ -98,7 +98,7 @@ impl From<&DoubleFaceMode> for CDoubleFaceMode {
     }
 }
 
-/// C-compatible resolved card structure  
+/// C-compatible resolved card structure
 #[repr(C)]
 pub struct CResolvedCard {
     pub name: *mut c_char,
@@ -108,6 +108,8 @@ pub struct CResolvedCard {
     pub back_border_crop_url: *mut c_char, // null if no back side
     pub quantity: u32,
     pub face_mode: CDoubleFaceMode,
+    pub back_type: u32, // BackSideType: 0=NONE, 1=DFC, 2=MELD
+    pub back_name: *mut c_char, // null if no back side
 }
 
 /// C-compatible array of resolved cards
@@ -166,19 +168,21 @@ fn card_to_c_resolved_card(card: &crate::scryfall::models::Card, quantity: u32, 
     let lang_cstr = CString::new(card.language.clone()).map_err(|_| FFIError::InvalidInput)?;
     let border_crop_cstr = CString::new(card.border_crop.clone()).map_err(|_| FFIError::InvalidInput)?;
     
-    let back_border_crop_ptr = if let Some(back_side) = &card.back_side {
+    let (back_border_crop_ptr, back_type, back_name_ptr) = if let Some(back_side) = &card.back_side {
         match back_side {
-            crate::scryfall::models::BackSide::DfcBack { image_url, .. } => {
+            crate::scryfall::models::BackSide::DfcBack { image_url, name } => {
                 let back_cstr = CString::new(image_url.clone()).map_err(|_| FFIError::InvalidInput)?;
-                back_cstr.into_raw()
+                let name_cstr = CString::new(name.clone()).map_err(|_| FFIError::InvalidInput)?;
+                (back_cstr.into_raw(), 1u32, name_cstr.into_raw()) // 1 = BACK_SIDE_DFC
             },
-            crate::scryfall::models::BackSide::ContributesToMeld { meld_result_image_url, .. } => {
+            crate::scryfall::models::BackSide::ContributesToMeld { meld_result_image_url, meld_result_name, .. } => {
                 let back_cstr = CString::new(meld_result_image_url.clone()).map_err(|_| FFIError::InvalidInput)?;
-                back_cstr.into_raw()
+                let name_cstr = CString::new(meld_result_name.clone()).map_err(|_| FFIError::InvalidInput)?;
+                (back_cstr.into_raw(), 2u32, name_cstr.into_raw()) // 2 = BACK_SIDE_MELD
             }
         }
     } else {
-        ptr::null_mut()
+        (ptr::null_mut(), 0u32, ptr::null_mut())
     };
 
     Ok(CResolvedCard {
@@ -189,6 +193,8 @@ fn card_to_c_resolved_card(card: &crate::scryfall::models::Card, quantity: u32, 
         back_border_crop_url: back_border_crop_ptr,
         quantity,
         face_mode: face_mode.into(),
+        back_type,
+        back_name: back_name_ptr,
     })
 }
 
@@ -217,6 +223,9 @@ pub extern "C" fn localhawk_free_resolved_cards(resolved_cards: *mut CResolvedCa
             }
             if !card.back_border_crop_url.is_null() {
                 drop(CString::from_raw(card.back_border_crop_url));
+            }
+            if !card.back_name.is_null() {
+                drop(CString::from_raw(card.back_name));
             }
         }
         // Free the cards array itself
@@ -527,7 +536,9 @@ pub struct CCardPrinting {
     pub set: *mut c_char,
     pub language: *mut c_char,
     pub border_crop: *mut c_char,
-    pub back_side: *mut c_char, // NULL if no back side
+    pub back_side: *mut c_char, // Back face/meld result image URL (NULL if no back side)
+    pub back_type: u32, // BackSideType enum value (0=none, 1=DFC, 2=meld)
+    pub back_name: *mut c_char, // Back face name or meld result name (NULL if no back side)
 }
 
 /// C-compatible card search result
@@ -537,115 +548,8 @@ pub struct CCardSearchResult {
     pub count: usize,
 }
 
-// TODO: Migrate to sync - Parse decklist and return resolved entries
-// Returns an array of CDeclistEntry structures
-/*
-#[unsafe(no_mangle)]
-pub extern "C" fn localhawk_parse_and_resolve_decklist(
-    decklist_cstr: *const c_char,
-    global_face_mode: c_int,
-    output_entries: *mut *mut CDeclistEntry,
-    output_count: *mut usize,
-) -> c_int {
-    if decklist_cstr.is_null() || output_entries.is_null() || output_count.is_null() {
-        return FFIError::NullPointer as c_int;
-    }
-
-    let decklist_text = match unsafe { CStr::from_ptr(decklist_cstr) }.to_str() {
-        Ok(s) => s,
-        Err(_) => return FFIError::InvalidInput as c_int,
-    };
-
-    let face_mode = match global_face_mode {
-        0 => DoubleFaceMode::FrontOnly,
-        1 => DoubleFaceMode::BackOnly,
-        2 => DoubleFaceMode::BothSides,
-        _ => return FFIError::InvalidInput as c_int,
-    };
-
-    // Use the FFI runtime instead of creating a temporary one
-    let rt = match get_ffi_runtime() {
-        Some(rt) => rt,
-        None => return FFIError::InitializationFailed as c_int, // Must call localhawk_initialize first
-    };
-
-    let entries = match rt.block_on(async {
-        ProxyGenerator::parse_and_resolve_decklist(decklist_text, face_mode).await
-    }) {
-        Ok(entries) => entries,
-        Err(_) => return FFIError::ParseFailed as c_int,
-    };
-
-    // Convert to C structures
-    let mut c_entries = Vec::with_capacity(entries.len());
-    for entry in entries {
-        let name = match CString::new(entry.name) {
-            Ok(s) => s.into_raw(),
-            Err(_) => return FFIError::OutOfMemory as c_int,
-        };
-        let set = entry
-            .set
-            .map(|s| CString::new(s).ok())
-            .flatten()
-            .map(|s| s.into_raw())
-            .unwrap_or(std::ptr::null_mut());
-        let language = entry
-            .lang
-            .map(|s| CString::new(s).ok())
-            .flatten()
-            .map(|s| s.into_raw())
-            .unwrap_or(std::ptr::null_mut());
-        let face_mode_int = match entry.face_mode {
-            DoubleFaceMode::FrontOnly => 0,
-            DoubleFaceMode::BackOnly => 1,
-            DoubleFaceMode::BothSides => 2,
-        };
-
-        c_entries.push(CDeclistEntry {
-            multiple: entry.multiple,
-            name,
-            set,
-            language,
-            face_mode: face_mode_int,
-            source_line_number: entry.source_line_number.map(|n| n as i32).unwrap_or(-1),
-        });
-    }
-
-    // Allocate array
-    let array_size = c_entries.len() * std::mem::size_of::<CDeclistEntry>();
-    let array_ptr = unsafe { libc::malloc(array_size) as *mut CDeclistEntry };
-    if array_ptr.is_null() {
-        // Clean up allocated strings
-        for entry in c_entries {
-            if !entry.name.is_null() {
-                unsafe {
-                    let _ = CString::from_raw(entry.name);
-                }
-            }
-            if !entry.set.is_null() {
-                unsafe {
-                    let _ = CString::from_raw(entry.set);
-                }
-            }
-            if !entry.language.is_null() {
-                unsafe {
-                    let _ = CString::from_raw(entry.language);
-                }
-            }
-        }
-        return FFIError::OutOfMemory as c_int;
-    }
-
-    // Copy entries to array
-    unsafe {
-        std::ptr::copy_nonoverlapping(c_entries.as_ptr(), array_ptr, c_entries.len());
-        *output_entries = array_ptr;
-        *output_count = c_entries.len();
-    }
-
-    FFIError::Success as c_int
-}
-*/
+// NOTE: Removed duplicate/commented function with illegal async call
+// The correct sync version is implemented below at line ~1536
 
 // TODO: Migrate to sync - Search for all printings of a specific card
 /*
@@ -669,7 +573,7 @@ pub extern "C" fn localhawk_search_card_printings(
         None => return FFIError::InitializationFailed as c_int, // Must call localhawk_initialize first
     };
 
-    let search_result = match rt.block_on(async { ProxyGenerator::search_card(card_name).await }) {
+    let search_result = match crate::ios_api::ProxyGenerator::search_card_sync(card_name) {
         Ok(result) => result,
         Err(_) => return FFIError::ParseFailed as c_int,
     };
@@ -693,22 +597,38 @@ pub extern "C" fn localhawk_search_card_printings(
             Ok(s) => s.into_raw(),
             Err(_) => return FFIError::OutOfMemory as c_int,
         };
-        let back_side = match card.back_side {
+        let (back_side, back_type, back_name) = match card.back_side {
             Some(back) => {
-                // Extract image URL from BackSide enum
-                let url = match back {
-                    crate::scryfall::models::BackSide::DfcBack { image_url, .. } => image_url,
+                match back {
+                    crate::scryfall::models::BackSide::DfcBack { image_url, name } => {
+                        let url_ptr = match CString::new(image_url) {
+                            Ok(s) => s.into_raw(),
+                            Err(_) => return FFIError::OutOfMemory as c_int,
+                        };
+                        let name_ptr = match CString::new(name) {
+                            Ok(s) => s.into_raw(),
+                            Err(_) => return FFIError::OutOfMemory as c_int,
+                        };
+                        (url_ptr, 1u32, name_ptr) // 1 = BACK_SIDE_DFC
+                    },
                     crate::scryfall::models::BackSide::ContributesToMeld {
                         meld_result_image_url,
+                        meld_result_name,
                         ..
-                    } => meld_result_image_url,
-                };
-                match CString::new(url) {
-                    Ok(s) => s.into_raw(),
-                    Err(_) => return FFIError::OutOfMemory as c_int,
+                    } => {
+                        let url_ptr = match CString::new(meld_result_image_url) {
+                            Ok(s) => s.into_raw(),
+                            Err(_) => return FFIError::OutOfMemory as c_int,
+                        };
+                        let name_ptr = match CString::new(meld_result_name) {
+                            Ok(s) => s.into_raw(),
+                            Err(_) => return FFIError::OutOfMemory as c_int,
+                        };
+                        (url_ptr, 2u32, name_ptr) // 2 = BACK_SIDE_MELD
+                    }
                 }
             }
-            None => std::ptr::null_mut(),
+            None => (std::ptr::null_mut(), 0u32, std::ptr::null_mut()),
         };
 
         c_cards.push(CCardPrinting {
@@ -717,6 +637,8 @@ pub extern "C" fn localhawk_search_card_printings(
             language,
             border_crop,
             back_side,
+            back_type,
+            back_name,
         });
     }
 
@@ -818,6 +740,9 @@ pub extern "C" fn localhawk_free_card_search_result(result: *mut CCardSearchResu
                     }
                     if !(*card).back_side.is_null() {
                         let _ = CString::from_raw((*card).back_side);
+                    }
+                    if !(*card).back_name.is_null() {
+                        let _ = CString::from_raw((*card).back_name);
                     }
                 }
                 libc::free(result_ref.cards as *mut libc::c_void);
@@ -1080,13 +1005,11 @@ pub extern "C" fn localhawk_start_background_loading(
         None => crate::DoubleFaceMode::BothSides,
     };
 
-    let _entries = match rt.block_on(crate::ProxyGenerator::parse_and_start_background_loading(
-        &decklist_string,
-        global_face_mode,
-    )) {
-        Ok(entries) => entries,
-        Err(_) => return FFIError::ParseFailed as c_int,
-    };
+    // Start background loading directly using the sync approach (fire-and-forget)
+    let entries_clone = rust_entries.clone();
+    std::thread::spawn(move || {
+        let _handle = crate::start_background_image_loading(entries_clone);
+    });
 
     // Since we're using fire-and-forget, just return a dummy handle ID
     unsafe {
@@ -1671,19 +1594,38 @@ pub extern "C" fn localhawk_search_card_printings(
             Ok(s) => s.into_raw(),
             Err(_) => return FFIError::OutOfMemory as c_int,
         };
-        let back_side = match card.back_side {
+        let (back_side, back_type, back_name) = match card.back_side {
             Some(back) => {
-                // Extract image URL from BackSide enum
-                let url = match back {
-                    crate::scryfall::models::BackSide::DfcBack { image_url, .. } => image_url,
-                    crate::scryfall::models::BackSide::ContributesToMeld { meld_result_image_url, .. } => meld_result_image_url,
-                };
-                match CString::new(url) {
-                    Ok(s) => s.into_raw(),
-                    Err(_) => return FFIError::OutOfMemory as c_int,
+                match back {
+                    crate::scryfall::models::BackSide::DfcBack { image_url, name } => {
+                        let url_ptr = match CString::new(image_url) {
+                            Ok(s) => s.into_raw(),
+                            Err(_) => return FFIError::OutOfMemory as c_int,
+                        };
+                        let name_ptr = match CString::new(name) {
+                            Ok(s) => s.into_raw(),
+                            Err(_) => return FFIError::OutOfMemory as c_int,
+                        };
+                        (url_ptr, 1u32, name_ptr) // 1 = BACK_SIDE_DFC
+                    },
+                    crate::scryfall::models::BackSide::ContributesToMeld {
+                        meld_result_image_url,
+                        meld_result_name,
+                        ..
+                    } => {
+                        let url_ptr = match CString::new(meld_result_image_url) {
+                            Ok(s) => s.into_raw(),
+                            Err(_) => return FFIError::OutOfMemory as c_int,
+                        };
+                        let name_ptr = match CString::new(meld_result_name) {
+                            Ok(s) => s.into_raw(),
+                            Err(_) => return FFIError::OutOfMemory as c_int,
+                        };
+                        (url_ptr, 2u32, name_ptr) // 2 = BACK_SIDE_MELD
+                    }
                 }
             }
-            None => std::ptr::null_mut(),
+            None => (std::ptr::null_mut(), 0u32, std::ptr::null_mut()),
         };
 
         c_cards.push(CCardPrinting {
@@ -1692,6 +1634,8 @@ pub extern "C" fn localhawk_search_card_printings(
             language,
             border_crop,
             back_side,
+            back_type,
+            back_name,
         });
     }
 
@@ -1706,6 +1650,7 @@ pub extern "C" fn localhawk_search_card_printings(
                 if !card.language.is_null() { let _ = CString::from_raw(card.language); }
                 if !card.border_crop.is_null() { let _ = CString::from_raw(card.border_crop); }
                 if !card.back_side.is_null() { let _ = CString::from_raw(card.back_side); }
+                if !card.back_name.is_null() { let _ = CString::from_raw(card.back_name); }
             }
         }
         return FFIError::OutOfMemory as c_int;
@@ -1724,6 +1669,7 @@ pub extern "C" fn localhawk_search_card_printings(
                 if !card.language.is_null() { let _ = CString::from_raw(card.language); }
                 if !card.border_crop.is_null() { let _ = CString::from_raw(card.border_crop); }
                 if !card.back_side.is_null() { let _ = CString::from_raw(card.back_side); }
+                if !card.back_name.is_null() { let _ = CString::from_raw(card.back_name); }
             }
         }
         return FFIError::OutOfMemory as c_int;

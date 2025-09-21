@@ -40,19 +40,30 @@ struct DecklistEntryData {
     }
 }
 
+/// Back side type for enhanced FFI
+enum BackSideType: UInt32 {
+    case none = 0    // No back side
+    case dfc = 1     // Double-faced card back side
+    case meld = 2    // Meld result card
+}
+
 struct CardPrintingData: Equatable {
     let name: String
     let set: String
     let language: String
     let borderCropURL: String
     let backSideURL: String?
-    
-    init(name: String, set: String, language: String, borderCropURL: String, backSideURL: String? = nil) {
+    let backSideType: BackSideType    // NEW: Type of back side
+    let backSideName: String?         // NEW: Back face name or meld result name
+
+    init(name: String, set: String, language: String, borderCropURL: String, backSideURL: String? = nil, backSideType: BackSideType = .none, backSideName: String? = nil) {
         self.name = name
         self.set = set
         self.language = language
         self.borderCropURL = borderCropURL
         self.backSideURL = backSideURL
+        self.backSideType = backSideType
+        self.backSideName = backSideName
     }
 }
 
@@ -626,7 +637,9 @@ class ProxyGenerator {
                     set: setCode,
                     language: language,
                     borderCropURL: borderCropURL,
-                    backSideURL: backBorderCropURL
+                    backSideURL: backBorderCropURL,
+                    backSideType: .none,  // This is from CResolvedCard, not enhanced CardPrinting
+                    backSideName: nil     // This is from CResolvedCard, not enhanced CardPrinting
                 )
                 
                 let resolvedCard = ResolvedCard(
@@ -759,13 +772,28 @@ class ProxyGenerator {
             let language = String(cString: card.language)
             let borderCropURL = String(cString: card.border_crop)
             let backSideURL = card.back_side != nil ? String(cString: card.back_side) : nil
-            
+            let backSideType: BackSideType = {
+                switch card.back_type {
+                case BACK_SIDE_NONE:
+                    return .none
+                case BACK_SIDE_DFC:
+                    return .dfc
+                case BACK_SIDE_MELD:
+                    return .meld
+                default:
+                    return .none
+                }
+            }()
+            let backSideName = card.back_name != nil ? String(cString: card.back_name) : nil
+
             cards.append(CardPrintingData(
                 name: name,
                 set: set,
                 language: language,
                 borderCropURL: borderCropURL,
-                backSideURL: backSideURL
+                backSideURL: backSideURL,
+                backSideType: backSideType,
+                backSideName: backSideName
             ))
         }
         
@@ -1189,5 +1217,113 @@ class ProxyGenerator {
 
             return imageUrls
         }
+    }
+
+    /// Resolve decklist entries to actual cards with image URLs (step 2 of desktop pattern)
+    /// - Parameter entries: Array of DecklistEntryData from parsing
+    /// - Returns: Result containing resolved cards or error
+    static func resolveEntriesToCards(_ entries: [DecklistEntryData]) -> Result<[ResolvedCard], ProxyGeneratorError> {
+        print("🔧 [ProxyGenerator] Resolving \(entries.count) entries to cards...")
+
+        // Ensure initialization
+        guard initialize() else {
+            return .failure(.initializationFailed)
+        }
+
+        guard !entries.isEmpty else {
+            return .failure(.invalidInput)
+        }
+
+        // Convert Swift DecklistEntryData to C DecklistEntry structures
+        var cEntries: [DecklistEntry] = []
+        var cStrings: [UnsafeMutablePointer<CChar>] = [] // Keep track of allocated strings
+
+        // Helper function to create C string and track it for cleanup
+        func createCString(_ string: String?) -> UnsafeMutablePointer<CChar>? {
+            guard let string = string else { return nil }
+            let cString = strdup(string)
+            if let cString = cString {
+                cStrings.append(cString)
+            }
+            return cString
+        }
+
+        defer {
+            // Clean up allocated C strings
+            for cString in cStrings {
+                free(cString)
+            }
+        }
+
+        // Convert entries to C structures
+        for entry in entries {
+            let cEntry = DecklistEntry(
+                multiple: entry.multiple,
+                name: createCString(entry.name),
+                set: createCString(entry.set),
+                language: createCString(entry.language),
+                face_mode: Int32(entry.faceMode.rawValue),
+                source_line_number: entry.sourceLineNumber.map { Int32($0) } ?? -1
+            )
+            cEntries.append(cEntry)
+        }
+
+        // Call FFI to resolve entries to cards (using existing function)
+        var cardsPtr: UnsafeMutablePointer<LocalHawkResolvedCard>?
+        var cardsCount: size_t = 0
+
+        let result = localhawk_get_resolved_cards_for_entries(
+            cEntries, cEntries.count,
+            &cardsPtr, &cardsCount
+        )
+
+        guard result == 0, let cards = cardsPtr, cardsCount > 0 else {
+            print("❌ [ProxyGenerator] Failed to resolve entries to cards")
+            return .failure(.unknownError(result))
+        }
+
+        // Convert C resolved cards to Swift ResolvedCard objects
+        var resolvedCards: [ResolvedCard] = []
+        for i in 0..<cardsCount {
+            let cCard = cards[i]
+
+            let backSideType: BackSideType = {
+                switch cCard.back_type {
+                case BACK_SIDE_NONE:
+                    return .none
+                case BACK_SIDE_DFC:
+                    return .dfc
+                case BACK_SIDE_MELD:
+                    return .meld
+                default:
+                    return .none
+                }
+            }()
+            let backSideName = cCard.back_name != nil ? String(cString: cCard.back_name) : nil
+
+            let cardPrinting = CardPrintingData(
+                name: String(cString: cCard.name),
+                set: String(cString: cCard.set_code),
+                language: String(cString: cCard.language),
+                borderCropURL: String(cString: cCard.border_crop_url),
+                backSideURL: cCard.back_border_crop_url != nil ? String(cString: cCard.back_border_crop_url!) : nil,
+                backSideType: backSideType,
+                backSideName: backSideName
+            )
+
+            let resolvedCard = ResolvedCard(
+                card: cardPrinting,
+                quantity: cCard.quantity,
+                faceMode: DoubleFaceMode(rawValue: Int32(cCard.face_mode.rawValue)) ?? .bothSides
+            )
+
+            resolvedCards.append(resolvedCard)
+        }
+
+        // Free the C array
+        localhawk_free_resolved_cards(cardsPtr, cardsCount)
+
+        print("✅ [ProxyGenerator] Successfully resolved \(resolvedCards.count) cards")
+        return .success(resolvedCards)
     }
 }

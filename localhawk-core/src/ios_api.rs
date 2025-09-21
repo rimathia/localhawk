@@ -101,6 +101,7 @@ impl ProxyGenerator {
     }
 
     /// iOS sync version of parse_and_resolve_decklist
+    /// Also starts background loading of alternative printings (fire and forget)
     pub fn parse_and_resolve_decklist_sync(
         decklist_text: &str,
         global_face_mode: DoubleFaceMode,
@@ -108,7 +109,7 @@ impl ProxyGenerator {
         use crate::scryfall::models::get_minimal_scryfall_languages;
         use crate::decklist::parse_decklist;
         use crate::globals::find_card_name;
-        
+
         // Get required data for parsing
         let scryfall_languages = get_minimal_scryfall_languages();
         let set_codes = {
@@ -156,7 +157,10 @@ impl ProxyGenerator {
             );
             resolved_entries.push(entry);
         }
-        
+
+        // Note: Background loading of alternative printings is handled separately in iOS
+        // via the load_alternative_printings_sync function when needed
+
         Ok(resolved_entries)
     }
 

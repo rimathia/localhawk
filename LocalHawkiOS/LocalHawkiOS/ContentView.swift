@@ -1,17 +1,18 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var decklistText = """
+    @State private var decklistText =
+  """
 
-1 Gisela, the Broken Blade
-1 Bruna, the Fading Light
-1 Counterspell [7ED]
-// comments are ignored
-1 Memory Lapse [ja]
-4 kabira takedown
-4 kabira plateau
-3 cut // ribbons (pakh)
-"""
+  1 Gisela, the Broken Blade
+  1 Bruna, the Fading Light
+  1 Counterspell [7ED]
+  // comments are ignored
+  1 Memory Lapse [ja]
+  4 kabira takedown
+  4 kabira plateau
+  3 cut // ribbons (pakh)
+  """
     @State private var isGenerating = false
     @State private var pdfData: Data?
     @State private var errorMessage: String?
@@ -19,7 +20,7 @@ struct ContentView: View {
     @State private var showingAdvancedOptions = false
     @State private var showingPrintSelection = false
     
-    // Print selection state  
+    // Print selection state - follows desktop pattern
     @State private var decklistEntries: [DecklistEntryData] = []
     @StateObject private var resolvedCardsWrapper = ResolvedCardsWrapper(cards: [])
     @State private var globalFaceMode: DoubleFaceMode = .bothSides
@@ -220,32 +221,50 @@ struct ContentView: View {
             errorMessage = "Please enter a decklist"
             return
         }
-        
+
         isGenerating = true
         errorMessage = nil
         print("🔥 Starting to parse decklist...")
-        
-        // Use the new combined parse + background loading function
+
+        // Use two-step process like desktop: parse then resolve
         Task(priority: .utility) {
-            let result = ProxyGenerator.parseAndStartBackgroundLoading(
+            // Step 1: Parse (same as desktop)
+            let parseResult = ProxyGenerator.parseAndResolveDecklist(
                 decklistText.trimmingCharacters(in: .whitespacesAndNewlines),
                 globalFaceMode: globalFaceMode
             )
-            
-            await MainActor.run {
-                isGenerating = false
-                
-                switch result {
-                case .success(let (entries, resolved)):
-                    print("🔥 Success! Got \(entries.count) entries and \(resolved.count) resolved cards")
-                    decklistEntries = entries
-                    resolvedCardsWrapper.cards = resolved
-                    errorMessage = nil
-                    showingPrintSelection = true
-                    print("🔥 Set showingPrintSelection = true")
-                    // Background loading is now started automatically by the core library
-                case .failure(let error):
-                    print("🔥 Failed to parse: \(error)")
+
+            switch parseResult {
+            case .success(let entries):
+                print("🔥 Step 1 Success! Parsed \(entries.count) entries")
+
+                // Step 2: Resolve entries to actual cards (same as desktop pattern)
+                let resolveResult = ProxyGenerator.resolveEntriesToCards(entries)
+
+                await MainActor.run {
+                    isGenerating = false
+
+                    switch resolveResult {
+                    case .success(let resolvedCards):
+                        print("🔥 Step 2 Success! Resolved \(resolvedCards.count) cards")
+                        decklistEntries = entries
+                        resolvedCardsWrapper.cards = resolvedCards
+                        errorMessage = nil
+                        showingPrintSelection = true
+                        print("🔥 Set showingPrintSelection = true")
+                        // Background loading of alternatives started automatically
+                    case .failure(let error):
+                        print("🔥 Step 2 Failed to resolve: \(error)")
+                        decklistEntries = []
+                        resolvedCardsWrapper.cards = []
+                        errorMessage = "Failed to resolve cards: \(error.localizedDescription)"
+                    }
+                }
+
+            case .failure(let error):
+                await MainActor.run {
+                    isGenerating = false
+                    print("🔥 Step 1 Failed to parse: \(error)")
                     decklistEntries = []
                     resolvedCardsWrapper.cards = []
                     errorMessage = "Failed to parse decklist: \(error.localizedDescription)"
@@ -268,36 +287,15 @@ struct ContentView: View {
 
         // Use Task with appropriate priority for PDF generation
         Task(priority: .utility) {
-            // Convert current resolved cards back to decklist entries (with updated print selections)
-            let updatedEntries = resolvedCardsWrapper.cards.map { resolvedCard in
-                DecklistEntryData(
-                    multiple: Int32(resolvedCard.quantity),
-                    name: resolvedCard.card.name,
-                    set: resolvedCard.card.set,
-                    language: resolvedCard.card.language,
-                    faceMode: resolvedCard.faceMode,
-                    sourceLineNumber: nil
-                )
-            }
-            print("🎯 [ContentView] Generating PDF from \(updatedEntries.count) updated entries with selected printings")
+            print("🎯 [ContentView] Generating PDF from \(decklistEntries.count) decklist entries")
 
-            // Debug logging: Compare with preview expansion
+            // Debug logging for entries
             print("🔍 [ContentView] PDF Generation Input:")
-            for (i, entry) in updatedEntries.enumerated() {
+            for (i, entry) in decklistEntries.enumerated() {
                 print("  [\(i)] '\(entry.name)' (\(entry.set ?? "any")) qty=\(entry.multiple) face=\(entry.faceMode)")
             }
 
-            print("🔍 [ContentView] Preview Expansion would generate:")
-            let previewExpansionUrls = resolvedCardsWrapper.cards.flatMap { resolvedCard in
-                let expandedImageUrls = ProxyGenerator.expandSingleCard(resolvedCard)
-                return expandedImageUrls
-            }
-            print("  Total preview URLs: \(previewExpansionUrls.count)")
-            for (i, url) in previewExpansionUrls.enumerated() {
-                print("  [\(i)] \(url)")
-            }
-
-            let result = ProxyGenerator.generatePDFFromEntries(updatedEntries)
+            let result = ProxyGenerator.generatePDFFromEntries(decklistEntries)
             
             await MainActor.run {
                 isGenerating = false

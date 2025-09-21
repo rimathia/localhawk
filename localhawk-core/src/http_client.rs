@@ -78,6 +78,60 @@ impl UreqHttpClient {
 
         Ok(response)
     }
+
+    /// Helper function to search for meld result cards without recursive meld resolution
+    fn search_meld_result(&self, meld_result_name: &str) -> Result<crate::scryfall::models::Card, ProxyError> {
+        // Simple URL encoding - just replace spaces
+        let encoded_name = meld_result_name.replace(" ", "+");
+        let uri = format!(
+            "https://api.scryfall.com/cards/search?q=name:\"{}\"&unique=prints",
+            encoded_name
+        );
+        log::debug!("Searching for meld result with URI: {}", uri);
+
+        let response = self.call_with_rate_limit(&uri)?;
+        let answer: crate::scryfall::models::ScryfallSearchAnswer = response
+            .into_json()
+            .map_err(|e| ProxyError::Serialization(format!("Failed to parse meld search results: {}", e)))?;
+
+        if answer.data.is_empty() {
+            return Err(ProxyError::InvalidCard(format!(
+                "Meld result '{}' not found",
+                meld_result_name
+            )));
+        }
+
+        // Debug: Log all search results for the meld result
+        log::debug!(
+            "Meld search for '{}' returned {} cards:",
+            meld_result_name,
+            answer.data.len()
+        );
+
+        // Convert first result to Card (don't recursively resolve meld results)
+        for (i, card_data) in answer.data.iter().enumerate() {
+            match crate::scryfall::models::Card::from_scryfall_object(&card_data) {
+                Ok(card) => {
+                    log::debug!(
+                        "  [{}] '{}' (set: {}) - URL: {}",
+                        i,
+                        card.name,
+                        card.set,
+                        card.border_crop
+                    );
+
+                    // Return the first successfully parsed card
+                    return Ok(card);
+                }
+                Err(e) => {
+                    log::debug!("Failed to parse meld result card: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        Err(ProxyError::InvalidCard("No valid meld result card found".to_string()))
+    }
 }
 
 #[cfg(feature = "ios")]
@@ -146,10 +200,48 @@ impl HttpClient for UreqHttpClient {
         // Simple filtering - just take all cards for now
         let filtered_cards = cards;
 
-        // Apply meld processing (shared logic from original search_card implementation)
+        // Apply meld processing (shared logic from scryfall/api.rs search_card implementation)
         let mut processed_cards = filtered_cards;
-        // Meld processing would go here, but for now we just use the cards as-is
-        // The meld_result field doesn't exist on Card, so we skip this processing
+
+        // Process meld cards - resolve empty meld_result_image_url fields
+        for card in &mut processed_cards {
+            if let Some(crate::scryfall::models::BackSide::ContributesToMeld {
+                meld_result_name,
+                meld_result_image_url,
+                ..
+            }) = &mut card.back_side
+            {
+                if meld_result_image_url.is_empty() {
+                    log::debug!(
+                        "Resolving meld result '{}' for card '{}'",
+                        meld_result_name,
+                        card.name
+                    );
+
+                    // Search for the meld result card (recursively via this same function)
+                    match self.search_meld_result(&meld_result_name) {
+                        Ok(meld_card) => {
+                            log::debug!(
+                                "Found meld result '{}' (set: {}) for card '{}' (set: {})",
+                                meld_card.name,
+                                meld_card.set,
+                                card.name,
+                                card.set
+                            );
+                            *meld_result_image_url = meld_card.border_crop.clone();
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Failed to resolve meld result '{}' for card '{}': {}",
+                                meld_result_name,
+                                card.name,
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+        }
 
         Ok(CardSearchResult {
             cards: processed_cards.clone(),

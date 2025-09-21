@@ -228,14 +228,25 @@ typedef struct {
 } DecklistEntry;
 
 /**
+ * Back side type enumeration for distinguishing DFC vs meld cards
+ */
+typedef enum {
+    BACK_SIDE_NONE = 0,  // No back side
+    BACK_SIDE_DFC = 1,   // Double-faced card back side
+    BACK_SIDE_MELD = 2   // Meld result card
+} BackSideType;
+
+/**
  * C-compatible card printing structure
  */
 typedef struct {
-    char* name;        // Card name
-    char* set;         // Set code
-    char* language;    // Language code
-    char* border_crop; // Front face image URL
-    char* back_side;   // Back face image URL (NULL if no back side)
+    char* name;           // Card name
+    char* set;            // Set code
+    char* language;       // Language code
+    char* border_crop;    // Front face image URL
+    char* back_side;      // Back face/meld result image URL (NULL if no back side)
+    BackSideType back_type; // Type of back side (none, DFC, meld)
+    char* back_name;      // Back face name or meld result name (NULL if no back side)
 } CardPrinting;
 
 /**
@@ -430,6 +441,8 @@ typedef struct {
     char* back_border_crop_url;     // Back face image URL (NULL if no back side)
     uint32_t quantity;              // Number of copies
     LocalHawkDoubleFaceMode face_mode; // Face mode for this card
+    BackSideType back_type;         // Type of back side (none, DFC, meld)
+    char* back_name;                // Back face name or meld result name (NULL if no back side)
 } LocalHawkResolvedCard;
 
 /**

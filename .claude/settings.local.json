@@ -32,7 +32,11 @@
       "Bash(cargo tree:*)",
       "Bash(swiftc:*)",
       "Read(//Users/mathiasritzmann/Library/vibe/ios_layout/**)",
-      "Read(//Users/mathiasritzmann/Library/vibe/**)"
+      "Read(//Users/mathiasritzmann/Library/vibe/**)",
+      "Bash(xcrun simctl boot:*)",
+      "Bash(log show:*)",
+      "Bash(xcrun simctl spawn:*)",
+      "Bash(swift:*)"
     ],
     "deny": []
   }

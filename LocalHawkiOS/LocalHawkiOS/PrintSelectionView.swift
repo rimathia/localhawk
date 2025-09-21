@@ -1,28 +1,42 @@
 import SwiftUI
 import Combine
 
+// Grid image data that maps each grid position to its specific URL (like desktop GUI)
+struct GridImageData {
+    let imageURL: String          // Specific front/back URL from expansion
+    let cardName: String          // Display name (e.g., "kabira takedown" vs "kabira plateau")
+    let setCode: String           // Set code for display
+    let position: Int             // Grid position (0-8 per page)
+    let page: Int                 // Page number
+}
+
 struct PrintSelectionView: View {
-    @ObservedObject var resolvedCardsWrapper: ResolvedCardsWrapper  // Wraps the array of ResolvedCard objects
+    @ObservedObject var resolvedCardsWrapper: ResolvedCardsWrapper  // Back to resolved cards for preview
     let onGeneratePDF: () -> Void
     let onDiscard: () -> Void
-    
+
     @Environment(\.dismiss) private var dismiss
     @State private var availablePrintings: [String: [CardPrintingData]] = [:] // Only for print selection modal
     @State private var isLoadingPrintings = false
     @State private var errorMessage: String?
     @State private var currentPage = 0
-    
+
     // Image cache notification state
     @State private var imageCacheListenerID: UUID?
-    
-    // Convenience property to access the resolved cards
+    @State private var refreshTrigger = false  // Used to force UI refresh when images are cached
+
+    // NEW: Grid image data computed from expansion (replaces ResolvedCard approach)
+    @State private var gridImageData: [GridImageData] = []
+    @State private var totalPages: Int = 1
+
+    // Convenience property to access the resolved cards (for backward compatibility)
     private var resolvedCards: [ResolvedCard] {
         resolvedCardsWrapper.cards
     }
     
     var body: some View {
         VStack(spacing: 0) {
-            if resolvedCardsWrapper.cards.isEmpty {
+            if gridImageData.isEmpty {
                 Spacer()
                 Text("No cards found in decklist")
                     .foregroundColor(.secondary)
@@ -31,13 +45,16 @@ struct PrintSelectionView: View {
             } else {
                 // 3x3 Grid - natural size only
                 GridPreviewSection(
-                    resolvedCards: resolvedCards,
+                    gridImageData: gridImageData,
+                    totalPages: totalPages,
                     currentPage: currentPage,
                     availablePrintings: availablePrintings,
                     onPageChanged: { newPage in
+                        print("📄 [PrintSelectionView] Page navigation: \(currentPage) -> \(newPage)")
                         currentPage = newPage
                     }
                 )
+                .id("\(refreshTrigger)-\(currentPage)") // Force re-render when refreshTrigger OR currentPage changes
                 .frame(maxWidth: .infinity)
                 
                 // Spacer pushes buttons to bottom
@@ -89,6 +106,7 @@ struct PrintSelectionView: View {
         .navigationTitle("Preview")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
+            computeGridImageData()  // NEW: Compute grid data first
             loadAvailablePrintings()
             self.startWatchingImageCache()
         }
@@ -96,7 +114,101 @@ struct PrintSelectionView: View {
             self.stopWatchingImageCache()
         }
     }
-    
+
+    // NEW: Compute grid image data from resolved cards using expansion (like desktop GUI)
+    private func computeGridImageData() {
+        guard !resolvedCards.isEmpty else {
+            gridImageData = []
+            totalPages = 1
+            return
+        }
+
+        print("🎯 [PrintSelectionView] Computing grid image data from \(resolvedCards.count) resolved cards")
+
+        var allImageData: [GridImageData] = []
+        var currentPosition = 0
+
+        for resolvedCard in resolvedCards {
+            print("🎯 [PrintSelectionView] Processing: \(resolvedCard.card.name) qty=\(resolvedCard.quantity) face_mode=\(resolvedCard.faceMode)")
+
+            // Use expansion logic to get specific URLs (like desktop GUI)
+            let imageUrls = ProxyGenerator.expandSingleCard(resolvedCard)
+
+            print("🎯 [PrintSelectionView] Expansion result: \(imageUrls.count) URLs")
+
+            // Create GridImageData for each URL
+            for (index, imageUrl) in imageUrls.enumerated() {
+                let page = currentPosition / 9  // 9 images per page (3x3 grid)
+                let positionInPage = currentPosition % 9
+
+                // Determine display name based on position and card type
+                let displayName = getDisplayNameForPosition(index, resolvedCard: resolvedCard)
+
+                let gridImage = GridImageData(
+                    imageURL: imageUrl,
+                    cardName: displayName,
+                    setCode: resolvedCard.card.set,
+                    position: positionInPage,
+                    page: page
+                )
+
+                allImageData.append(gridImage)
+                currentPosition += 1
+
+                print("  [\(index)] \(displayName) -> page=\(page) pos=\(positionInPage)")
+            }
+        }
+
+        self.gridImageData = allImageData
+        self.totalPages = max(1, (allImageData.count + 8) / 9)  // Ceiling division
+        print("🎯 [PrintSelectionView] Generated \(allImageData.count) grid images across \(totalPages) pages")
+
+        // Debug: Show page distribution
+        for page in 0..<totalPages {
+            let imagesOnPage = allImageData.filter { $0.page == page }
+            print("📄 [PrintSelectionView] Page \(page): \(imagesOnPage.count) images")
+            for (index, imageData) in imagesOnPage.enumerated() {
+                if index < 5 { // Show first 5 per page
+                    print("    [\(imageData.position)] \(imageData.cardName)")
+                }
+            }
+        }
+    }
+
+    // Helper function to determine display name based on position and card type
+    private func getDisplayNameForPosition(_ index: Int, resolvedCard: ResolvedCard) -> String {
+        // For the first image (index 0), always show the original card name
+        if index == 0 {
+            // For DFC cards, extract front face name
+            if resolvedCard.card.name.contains(" // ") {
+                let parts = resolvedCard.card.name.components(separatedBy: " // ")
+                return parts[0]
+            }
+            return resolvedCard.card.name
+        }
+
+        // For the second image (index 1), determine based on card type
+        if index == 1 {
+            switch resolvedCard.card.backSideType {
+            case .dfc:
+                // For DFC cards, extract back face name
+                if resolvedCard.card.name.contains(" // ") {
+                    let parts = resolvedCard.card.name.components(separatedBy: " // ")
+                    return parts.count > 1 ? parts[1] : resolvedCard.card.name
+                }
+                return resolvedCard.card.name
+            case .meld:
+                // For meld cards, use the meld result name
+                return resolvedCard.card.backSideName ?? "Meld Result"
+            case .none:
+                return resolvedCard.card.name
+            }
+        }
+
+        // For any additional images, use the original card name
+        return resolvedCard.card.name
+    }
+
     private func loadAvailablePrintings() {
         print("loadAvailablePrintings() called with \(resolvedCards.count) resolved cards")
         isLoadingPrintings = true
@@ -184,45 +296,24 @@ struct PrintSelectionView: View {
     
     private func handleImageCacheNotification(_ notification: ImageCacheChangeNotification) {
         print("🖼️ [PrintSelectionView] Received image cache notification: \(notification.changeType == 1 ? "CACHED" : "REMOVED") - \(notification.imageUrl)")
-        
+
         // Only process ImageCached notifications (type 1)
         guard notification.changeType == 1 else { return }
-        
+
         print("✅ [PrintSelectionView] Image cached: \(notification.imageUrl)")
-        
-        // Smart approach: find which specific cards use this URL and refresh only those
-        refreshCardsUsingImageURL(notification.imageUrl)
+
+        // Simple approach: refresh all grid views since they check cache on render
+        refreshAllGridViews()
     }
-    
-    private func refreshCardsUsingImageURL(_ cachedURL: String) {
-        // Check which ResolvedCard objects use this specific URL (desktop pattern)
-        var affectedCardNames: Set<String> = []
-        
-        for resolvedCard in resolvedCards {
-            let imageUrls = resolvedCard.getImageUrls()
-            if imageUrls.contains(cachedURL) {
-                affectedCardNames.insert(resolvedCard.card.name)
-                print("🎯 [PrintSelectionView] Found cached image for resolved card: \(resolvedCard.card.name)")
-            }
-        }
-        
-        guard !affectedCardNames.isEmpty else {
-            print("ℹ️ [PrintSelectionView] Cached URL not found in any available printings: \(cachedURL)")
-            return
-        }
-        
-        print("🔄 [PrintSelectionView] Triggering targeted refresh for \(affectedCardNames.count) affected cards")
-        
-        // Trigger SwiftUI refresh for affected ResolvedCard objects (desktop pattern)
-        for resolvedCard in resolvedCards {
-            if affectedCardNames.contains(resolvedCard.card.name) {
-                print("🔄 [PrintSelectionView] Refreshing UI for resolved card: \(resolvedCard.card.name)")
-                // Force SwiftUI to re-evaluate this ResolvedCard's views
-                resolvedCard.objectWillChange.send()
-            }
-        }
-        
-        // Also send a NotificationCenter notification as backup
+
+    private func refreshAllGridViews() {
+        print("🔄 [PrintSelectionView] Refreshing all grid views for image cache update")
+
+        // Force SwiftUI to re-evaluate all grid views by toggling state
+        // Since NewGridCardView checks the cache when it renders, this will pick up new images
+        refreshTrigger.toggle()
+
+        // Also send a NotificationCenter notification as backup for any views that need it
         NotificationCenter.default.post(name: Notification.Name("ImageCacheUpdated"), object: nil)
     }
     
@@ -232,7 +323,8 @@ struct PrintSelectionView: View {
 // MARK: - Grid Preview Section
 
 struct GridPreviewSection: View {
-    let resolvedCards: [ResolvedCard]
+    let gridImageData: [GridImageData]
+    let totalPages: Int
     let currentPage: Int
     let availablePrintings: [String: [CardPrintingData]]
     let onPageChanged: (Int) -> Void
@@ -265,8 +357,8 @@ struct GridPreviewSection: View {
 
                 LazyVGrid(columns: gridColumns, spacing: 0) {
                     ForEach(0..<cardsPerPage, id: \.self) { index in
-                        GridCardView(
-                            resolvedCard: getResolvedCardForGridPosition(index),
+                        NewGridCardView(
+                            gridImageData: getGridImageDataForPosition(index),
                             availablePrintings: availablePrintings
                         )
                         .frame(width: cellWidth, height: cellHeight)
@@ -277,13 +369,6 @@ struct GridPreviewSection: View {
             .background(Color(UIColor.systemBackground))
             
             // Page navigation footer - takes fixed space
-            let totalCards = resolvedCards.reduce(0) { total, resolvedCard in
-                let imageUrls = resolvedCard.getImageUrls()
-                let imagesPerCard = imageUrls.count
-                return total + (Int(resolvedCard.quantity) * imagesPerCard)
-            }
-            let totalPages = max(1, (totalCards + cardsPerPage - 1) / cardsPerPage)
-            
             if totalPages > 1 {
                 HStack(spacing: 20) {
                     Button(action: {
@@ -324,19 +409,11 @@ struct GridPreviewSection: View {
         }
     }
     
-    private func getResolvedCardForGridPosition(_ position: Int) -> ResolvedCard? {
-        // Use Rust expansion logic to ensure 100% consistency with PDF generation
-        let expandedCards = resolvedCards.flatMap { resolvedCard in
-            // Call Rust FFI to get exact same expansion as PDF generation
-            let expandedImageUrls = ProxyGenerator.expandSingleCard(resolvedCard)
-            // Each image URL corresponds to one grid position, all pointing to the same ResolvedCard
-            return Array(repeating: resolvedCard, count: expandedImageUrls.count)
+    private func getGridImageDataForPosition(_ position: Int) -> GridImageData? {
+        // Find the grid image data for this position on the current page
+        return gridImageData.first { imageData in
+            imageData.page == currentPage && imageData.position == position
         }
-
-        let startIndex = currentPage * cardsPerPage
-        let targetIndex = startIndex + position
-
-        return targetIndex < expandedCards.count ? expandedCards[targetIndex] : nil
     }
 }
 
@@ -629,6 +706,94 @@ struct PrintingThumbnailView: View {
             isLoadingImage = false
         case .failure:
             print("🔍 [PrintingThumbnailView] Image not cached yet for: \(printing.set)")
+            imageData = nil
+            isLoadingImage = true
+        }
+    }
+}
+
+// NEW: GridCardView that uses specific image URLs (like desktop GUI)
+struct NewGridCardView: View {
+    let gridImageData: GridImageData?  // Specific image data for this position
+    let availablePrintings: [String: [CardPrintingData]] // Available printings for modal
+
+    @State private var imageData: Data?
+    @State private var isLoadingImage = false
+    @State private var showPrintSelection = false
+
+    var body: some View {
+        ZStack {
+            // Background (no borders in PDF)
+            Rectangle()
+                .fill(Color(UIColor.systemBackground))
+
+            if let gridImage = gridImageData {
+                if let imageData = imageData, let uiImage = UIImage(data: imageData) {
+                    // Show specific image from URL
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                } else if isLoadingImage {
+                    // Loading state
+                    VStack(spacing: 4) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading...")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    // Placeholder with correct card name
+                    VStack(spacing: 4) {
+                        Image(systemName: "photo")
+                            .foregroundColor(.secondary)
+                            .font(.title3)
+
+                        Text(gridImage.cardName)  // Uses correct name (takedown vs plateau)
+                            .font(.caption2)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.primary)
+                            .lineLimit(3)
+                            .padding(.horizontal, 4)
+
+                        Text("[\(gridImage.setCode.uppercased())]")
+                            .font(.caption2)
+                            .foregroundColor(.blue)
+                    }
+                }
+            } else {
+                // Empty grid position (no borders like PDF)
+                Rectangle()
+                    .fill(Color(UIColor.systemBackground))
+            }
+        }
+        .onTapGesture {
+            // TODO: Add print selection modal support if needed
+        }
+        .onAppear {
+            if let gridImage = gridImageData {
+                print("🎯 [NewGridCardView] Loading specific image: \(gridImage.cardName) -> \(gridImage.imageURL)")
+                loadSpecificImage(gridImage.imageURL)
+            }
+        }
+    }
+
+    private func loadSpecificImage(_ imageURL: String) {
+        print("🖼️ [NewGridCardView] Loading specific URL: \(imageURL)")
+
+        // Check if image is already cached
+        guard ProxyGenerator.initialize() else {
+            print("Failed to initialize ProxyGenerator for image loading")
+            return
+        }
+
+        switch ProxyGenerator.getCachedImageData(for: imageURL) {
+        case .success(let data):
+            print("✅ [NewGridCardView] Using cached image for URL: \(imageURL)")
+            imageData = data
+            isLoadingImage = false
+        case .failure:
+            print("🔍 [NewGridCardView] Image not cached yet for URL: \(imageURL)")
             imageData = nil
             isLoadingImage = true
         }
