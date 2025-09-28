@@ -1,6 +1,15 @@
 import SwiftUI
 import Combine
 
+// MARK: - Debug Logging Helper
+
+/// Debug print that only outputs in debug builds
+private func debugPrint(_ items: Any..., separator: String = " ", terminator: String = "\n") {
+    #if DEBUG
+    print(items.map { "\($0)" }.joined(separator: separator), terminator: terminator)
+    #endif
+}
+
 // Grid image data that maps each grid position to its specific URL (like desktop GUI)
 struct GridImageData {
     let imageURL: String          // Specific front/back URL from expansion

@@ -1,5 +1,14 @@
 import Foundation
 
+// MARK: - Debug Logging Helper
+
+/// Debug print that only outputs in debug builds
+private func debugPrint(_ items: Any..., separator: String = " ", terminator: String = "\n") {
+    #if DEBUG
+    print(items.map { "\($0)" }.joined(separator: separator), terminator: terminator)
+    #endif
+}
+
 struct CacheStatistics {
     let count: UInt32
     let sizeMB: Double
@@ -165,18 +174,19 @@ class ProxyGenerator {
     /// Must be called before any other operations
     @discardableResult
     static func initialize() -> Bool {
-        guard !isInitialized else { 
-            print("🟢 [ProxyGenerator] Already initialized")
-            return true 
+        guard !isInitialized else {
+            debugPrint("🟢 [ProxyGenerator] Already initialized")
+            return true
         }
-        
-        print("🚀 [ProxyGenerator] Starting initialization...")
+
+        debugPrint("🚀 [ProxyGenerator] Starting initialization...")
         let result = localhawk_initialize()
         isInitialized = (result == 0)
-        
+
         if isInitialized {
-            print("✅ [ProxyGenerator] Initialization successful")
+            debugPrint("✅ [ProxyGenerator] Initialization successful")
         } else {
+            // Keep error messages for user debugging
             print("❌ [ProxyGenerator] Initialization failed with code: \(result)")
         }
         
@@ -196,12 +206,12 @@ class ProxyGenerator {
     /// C callback function for image cache dispatch source notifications
     private static let imageCacheNotificationCallback: @convention(c) (UnsafeRawPointer?, UnsafePointer<CChar>?) -> Void = { sourcePtr, keyCStr in
         guard let sourcePtr = sourcePtr, let keyCStr = keyCStr else {
-            print("⚠️ [ProxyGenerator] Image cache dispatch callback received null pointer")
+            debugPrint("⚠️ [ProxyGenerator] Image cache dispatch callback received null pointer")
             return
         }
         
         let key = String(cString: keyCStr)
-        print("📲 [ProxyGenerator] Image cache dispatch source notification for key: '\(key)'")
+        debugPrint("📲 [ProxyGenerator] Image cache dispatch source notification for key: '\(key)'")
         
         // Convert the source pointer back to the dispatch source and trigger it
         let source = Unmanaged<DispatchSourceUserDataAdd>.fromOpaque(sourcePtr).takeUnretainedValue()
@@ -209,7 +219,7 @@ class ProxyGenerator {
         // Trigger the dispatch source by merging data
         source.add(data: 1)
         
-        print("🔔 [ProxyGenerator] Triggered image cache dispatch source for key: '\(key)'")
+        debugPrint("🔔 [ProxyGenerator] Triggered image cache dispatch source for key: '\(key)'")
     }
     
     /// Get queued image cache change notifications from Rust
@@ -250,14 +260,14 @@ class ProxyGenerator {
         }
         
         let listenerID = UUID()
-        print("📡 [ProxyGenerator] Starting to watch image cache with ID \(listenerID)")
+        debugPrint("📡 [ProxyGenerator] Starting to watch image cache with ID \(listenerID)")
         
         // Create global dispatch source only on first registration
         if globalImageCacheDispatchSource == nil {
             let source = DispatchSource.makeUserDataAddSource(queue: DispatchQueue.main)
             
             source.setEventHandler {
-                print("🔔 [ProxyGenerator] Global image cache dispatch source fired")
+                debugPrint("🔔 [ProxyGenerator] Global image cache dispatch source fired")
                 
                 // Get all queued image cache change notifications
                 let changes = getQueuedImageCacheChanges()
@@ -334,7 +344,7 @@ class ProxyGenerator {
             return .failure(.initializationFailed)
         }
         
-        print("📝 [ProxyGenerator] Processing decklist with \(decklist.split(separator: "\n").count) lines")
+        debugPrint("📝 [ProxyGenerator] Processing decklist with \(decklist.split(separator: "\n").count) lines")
         
         // Convert Swift string to C string
         guard let decklistCString = decklist.cString(using: .utf8) else {
@@ -505,7 +515,7 @@ class ProxyGenerator {
         _ decklist: String,
         globalFaceMode: DoubleFaceMode = .bothSides
     ) -> Result<([DecklistEntryData], [ResolvedCard]), ProxyGeneratorError> {
-        print("🔍 [ProxyGenerator] Parsing decklist, resolving cards, and starting background loading...")
+        debugPrint("🔍 [ProxyGenerator] Parsing decklist, resolving cards, and starting background loading...")
         print("📝 [ProxyGenerator] Decklist has \(decklist.split(separator: "\n").count) lines, face mode: \(globalFaceMode.displayName)")
         
         // Ensure initialization
@@ -520,7 +530,7 @@ class ProxyGenerator {
             return .failure(.invalidInput)
         }
         
-        print("🚀 [ProxyGenerator] Calling Rust core for parsing and background loading...")
+        debugPrint("🚀 [ProxyGenerator] Calling Rust core for parsing and background loading...")
         
         // Prepare output pointers
         var entriesPtr: UnsafeMutablePointer<DecklistEntry>?
@@ -542,7 +552,7 @@ class ProxyGenerator {
         
         // Ensure we got entries
         guard let entriesArray = entriesPtr, entriesCount > 0 else {
-            print("✅ [ProxyGenerator] No entries parsed from decklist")
+            debugPrint("✅ [ProxyGenerator] No entries parsed from decklist")
             return .success(([], []))
         }
         
@@ -657,7 +667,7 @@ class ProxyGenerator {
             localhawk_free_resolved_cards(resolvedCardsPtr, resolvedCardsCount)
         }
         
-        print("✅ [ProxyGenerator] Parsed \(entries.count) entries, resolved \(resolvedCards.count) cards, background loading started automatically")
+        debugPrint("✅ [ProxyGenerator] Parsed \(entries.count) entries, resolved \(resolvedCards.count) cards, background loading started automatically")
         return .success((entries, resolvedCards))
     }
 

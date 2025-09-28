@@ -237,10 +237,21 @@ pub extern "C" fn localhawk_free_resolved_cards(resolved_cards: *mut CResolvedCa
 /// Must be called before any other FFI functions
 #[unsafe(no_mangle)]
 pub extern "C" fn localhawk_initialize() -> c_int {
-    // Initialize logging (optional, can be removed if not needed on iOS)
+    // Initialize logging with appropriate level for build type
     #[cfg(debug_assertions)]
     {
-        if let Err(_) = env_logger::try_init() {
+        if let Err(_) = env_logger::Builder::from_default_env()
+            .filter_level(log::LevelFilter::Debug)
+            .try_init() {
+            // Already initialized, that's fine
+        }
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        if let Err(_) = env_logger::Builder::from_default_env()
+            .filter_level(log::LevelFilter::Warn)  // Only warnings and errors in release
+            .try_init() {
             // Already initialized, that's fine
         }
     }
