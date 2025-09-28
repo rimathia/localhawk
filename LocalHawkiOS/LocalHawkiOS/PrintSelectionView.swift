@@ -681,7 +681,7 @@ struct DynamicGridCardView: View {
             // Reload when print selection changes or images are cached
             loadImageForCurrentCard()
         }
-        .sheet(isPresented: $showPrintSelection) {
+        .fullScreenCover(isPresented: $showPrintSelection) {
             if let (resolvedCard, _, displayName) = gridData,
                let cardPrintings = availablePrintings[resolvedCard.card.name] {
 
@@ -690,11 +690,11 @@ struct DynamicGridCardView: View {
                     availablePrintings: cardPrintings,
                     currentCard: resolvedCard.card,
                     onPrintingSelected: { selectedPrinting in
-                        print("✅ [DynamicGridCardView] Selected new printing: \(selectedPrinting.set) (\(selectedPrinting.language)) for \(displayName)")
+                        debugPrint("✅ [DynamicGridCardView] Selected new printing: \(selectedPrinting.set) (\(selectedPrinting.language)) for \(displayName)")
 
                         // Find the decklist entry index for this resolved card
                         if let decklistEntryIndex = resolvedCardsWrapper.cards.firstIndex(where: { $0 === resolvedCard }) {
-                            print("🔥 [DynamicGridCardView] About to call updatePrintSelection for decklistEntryIndex=\(decklistEntryIndex)")
+                            debugPrint("🔥 [DynamicGridCardView] About to call updatePrintSelection for decklistEntryIndex=\(decklistEntryIndex)")
                             // Desktop pattern: Update source DecklistEntryData and re-resolve everything
                             updatePrintSelection(decklistEntryIndex: decklistEntryIndex,
                                                newPrinting: selectedPrinting)
@@ -702,7 +702,7 @@ struct DynamicGridCardView: View {
                             print("❌ [DynamicGridCardView] Could not find decklist entry index for resolved card")
                         }
 
-                        print("🔥 [DynamicGridCardView] updatePrintSelection call completed")
+                        debugPrint("🔥 [DynamicGridCardView] updatePrintSelection call completed")
                         showPrintSelection = false
                     }
                 )
