@@ -24,8 +24,8 @@ enum DoubleFaceMode: Int32, CaseIterable {
 struct DecklistEntryData {
     let multiple: Int32
     let name: String
-    let set: String?
-    let language: String?
+    var set: String?      // Make mutable for print selection updates
+    var language: String? // Make mutable for print selection updates
     let faceMode: DoubleFaceMode
     let sourceLineNumber: Int32?
     
@@ -79,9 +79,9 @@ struct CardSearchResultData {
 /// This represents a (Card, quantity, face_mode) tuple that can be modified by print selection
 class ResolvedCard: ObservableObject {
     @Published var card: CardPrintingData  // The selected card (can be changed by print selection)
-    let quantity: UInt32                   // Number of copies  
+    let quantity: UInt32                   // Number of copies
     let faceMode: DoubleFaceMode          // Face mode for this entry
-    
+
     init(card: CardPrintingData, quantity: UInt32, faceMode: DoubleFaceMode) {
         self.card = card
         self.quantity = quantity

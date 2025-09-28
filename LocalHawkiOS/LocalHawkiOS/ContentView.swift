@@ -2,17 +2,18 @@ import SwiftUI
 
 struct ContentView: View {
     @State private var decklistText =
-  """
+    """
 
-  1 Gisela, the Broken Blade
-  1 Bruna, the Fading Light
-  1 Counterspell [7ED]
-  // comments are ignored
-  1 Memory Lapse [ja]
-  4 kabira takedown
-  4 kabira plateau
-  3 cut // ribbons (pakh)
-  """
+    1 Gisela, the Broken Blade (emn)
+    1 Gisela, the Broken Blade (sld)
+    1 Bruna, the Fading Light
+    1 Counterspell [7ED]
+    // comments are ignored
+    1 Memory Lapse [ja]
+    4 kabira takedown
+    4 kabira plateau
+    3 cut // ribbons (pakh)
+    """
     @State private var isGenerating = false
     @State private var pdfData: Data?
     @State private var errorMessage: String?
@@ -144,6 +145,7 @@ struct ContentView: View {
                 NavigationLink(
                     destination: PrintSelectionView(
                         resolvedCardsWrapper: resolvedCardsWrapper,
+                        decklistEntries: $decklistEntries,
                         onGeneratePDF: generatePDFFromSelection,
                         onDiscard: {
                             showingPrintSelection = false

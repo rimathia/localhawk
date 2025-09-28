@@ -80,7 +80,8 @@ impl UreqHttpClient {
     }
 
     /// Helper function to search for meld result cards without recursive meld resolution
-    fn search_meld_result(&self, meld_result_name: &str) -> Result<crate::scryfall::models::Card, ProxyError> {
+    /// Prioritizes meld results from the same set as the original card
+    fn search_meld_result(&self, meld_result_name: &str, original_card_set: &str) -> Result<crate::scryfall::models::Card, ProxyError> {
         // Simple URL encoding - just replace spaces
         let encoded_name = meld_result_name.replace(" ", "+");
         let uri = format!(
@@ -108,7 +109,8 @@ impl UreqHttpClient {
             answer.data.len()
         );
 
-        // Convert first result to Card (don't recursively resolve meld results)
+        // Convert all results to Cards and find the best match
+        let mut all_meld_cards = Vec::new();
         for (i, card_data) in answer.data.iter().enumerate() {
             match crate::scryfall::models::Card::from_scryfall_object(&card_data) {
                 Ok(card) => {
@@ -119,9 +121,7 @@ impl UreqHttpClient {
                         card.set,
                         card.border_crop
                     );
-
-                    // Return the first successfully parsed card
-                    return Ok(card);
+                    all_meld_cards.push(card);
                 }
                 Err(e) => {
                     log::debug!("Failed to parse meld result card: {}", e);
@@ -130,7 +130,28 @@ impl UreqHttpClient {
             }
         }
 
-        Err(ProxyError::InvalidCard("No valid meld result card found".to_string()))
+        if all_meld_cards.is_empty() {
+            return Err(ProxyError::InvalidCard("No valid meld result card found".to_string()));
+        }
+
+        // Find a meld result card that matches the same set as the original card, or use the first one
+        // This matches the logic in scryfall/api.rs
+        let meld_card = all_meld_cards
+            .iter()
+            .find(|meld_card| meld_card.set == original_card_set)
+            .or_else(|| all_meld_cards.first())
+            .ok_or_else(|| {
+                ProxyError::InvalidCard("No meld result card available".to_string())
+            })?;
+
+        log::debug!(
+            "Selected meld result '{}' (set: {}) for original card set '{}'",
+            meld_card.name,
+            meld_card.set,
+            original_card_set
+        );
+
+        Ok(meld_card.clone())
     }
 }
 
@@ -218,8 +239,8 @@ impl HttpClient for UreqHttpClient {
                         card.name
                     );
 
-                    // Search for the meld result card (recursively via this same function)
-                    match self.search_meld_result(&meld_result_name) {
+                    // Search for the meld result card, prioritizing same set
+                    match self.search_meld_result(&meld_result_name, &card.set) {
                         Ok(meld_card) => {
                             log::debug!(
                                 "Found meld result '{}' (set: {}) for card '{}' (set: {})",
