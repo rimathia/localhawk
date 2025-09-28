@@ -4,13 +4,12 @@
 //! It can be used by both async (desktop) and sync (iOS) implementations.
 
 use crate::{
-    error::ProxyError,
     lookup::CardNameLookup,
     scryfall::models::{ScryfallCardNames, ScryfallSetCodes},
 };
 use std::collections::HashSet;
 use time::OffsetDateTime;
-use tracing::{debug, info};
+use tracing::info;
 
 /// Pure business logic for processing card names into a fuzzy matching index
 pub fn process_card_names_into_lookup(card_names: &ScryfallCardNames) -> CardNameLookup {

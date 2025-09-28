@@ -5,7 +5,7 @@
 use crate::{
     decklist::DecklistEntry,
     error::ProxyError,
-    globals::{get_image_cache, get_search_results_cache, get_set_codes_cache, find_card_name},
+    globals::{get_image_cache, get_search_results_cache, get_set_codes_cache},
     http_client::{HttpClient, UreqHttpClient},
     lookup::NameMatchMode,
     scryfall::models::{Card, CardSearchResult},
@@ -204,7 +204,7 @@ impl ProxyGenerator {
     pub fn generate_pdf_from_entries_sync<F>(
         entries: &[DecklistEntry],
         options: crate::pdf::PdfOptions,
-        mut progress_callback: F,
+        progress_callback: F,
     ) -> Result<Vec<u8>, ProxyError>
     where
         F: FnMut(usize, usize),

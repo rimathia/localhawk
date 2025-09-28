@@ -24,7 +24,7 @@ use std::{collections::HashSet, fs, path::PathBuf};
 #[cfg(feature = "ios")]
 use time::OffsetDateTime;
 #[cfg(feature = "ios")]
-use tracing::{debug, info, error};
+use tracing::{debug, info};
 
 #[cfg(feature = "ios")]
 #[derive(Serialize, Deserialize)]
