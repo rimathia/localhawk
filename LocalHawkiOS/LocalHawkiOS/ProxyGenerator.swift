@@ -1131,7 +1131,7 @@ class ProxyGenerator {
     /// - Returns: Array of image URLs in the exact same order as PDF generation
     static func expandSingleCard(_ resolvedCard: ResolvedCard) -> [String] {
         // Log the input for debugging
-        print("🍎 [Swift] expandSingleCard: '\(resolvedCard.card.name)' qty=\(resolvedCard.quantity) face_mode=\(resolvedCard.faceMode)")
+        print(" [Swift] expandSingleCard: '\(resolvedCard.card.name)' qty=\(resolvedCard.quantity) face_mode=\(resolvedCard.faceMode)")
 
         // Ensure initialization
         guard initialize() else {

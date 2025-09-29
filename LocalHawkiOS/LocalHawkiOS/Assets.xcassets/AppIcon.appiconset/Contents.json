@@ -26,11 +26,13 @@
       "size" : "40x40"
     },
     {
+      "filename" : "l120.png",
       "idiom" : "iphone",
       "scale" : "3x",
       "size" : "40x40"
     },
     {
+      "filename" : "l120 1.png",
       "idiom" : "iphone",
       "scale" : "2x",
       "size" : "60x60"
@@ -71,6 +73,7 @@
       "size" : "40x40"
     },
     {
+      "filename" : "l152.png",
       "idiom" : "ipad",
       "scale" : "2x",
       "size" : "76x76"
@@ -81,6 +84,7 @@
       "size" : "83.5x83.5"
     },
     {
+      "filename" : "l.png",
       "idiom" : "ios-marketing",
       "scale" : "1x",
       "size" : "1024x1024"

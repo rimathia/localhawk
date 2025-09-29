@@ -8,17 +8,19 @@
 
 /* Begin PBXBuildFile section */
 		1E2D65BC2E5060E6006DF585 /* AdvancedOptionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E2D65BB2E5060E6006DF585 /* AdvancedOptionsView.swift */; };
+		1E80600D2E8A5104009AF611 /* LocalHawkCore.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 1E80600C2E8A5104009AF611 /* LocalHawkCore.xcframework */; };
 		1EA9C4F92E50F34600D3F8CB /* PrintSelectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EA9C4F82E50F34600D3F8CB /* PrintSelectionView.swift */; };
 		A1000001 /* LocalHawkiOSApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000002 /* LocalHawkiOSApp.swift */; };
 		A1000003 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000004 /* ContentView.swift */; };
 		A1000005 /* ProxyGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000006 /* ProxyGenerator.swift */; };
 		A1000007 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000008 /* Assets.xcassets */; };
 		A1000009 /* Preview Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = A1000010 /* Preview Assets.xcassets */; };
-		A1000011 /* liblocalhawk_core_sim.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A1000012 /* liblocalhawk_core_sim.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		1E2D65BB2E5060E6006DF585 /* AdvancedOptionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdvancedOptionsView.swift; sourceTree = "<group>"; };
+		1E80600A2E89BB93009AF611 /* liblocalhawk_core_device.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = liblocalhawk_core_device.a; path = "../ios-libs/liblocalhawk_core_device.a"; sourceTree = "<group>"; };
+		1E80600C2E8A5104009AF611 /* LocalHawkCore.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = LocalHawkCore.xcframework; path = "../ios-libs/LocalHawkCore.xcframework"; sourceTree = "<group>"; };
 		1EA9C4F82E50F34600D3F8CB /* PrintSelectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintSelectionView.swift; sourceTree = "<group>"; };
 		A1000002 /* LocalHawkiOSApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalHawkiOSApp.swift; sourceTree = "<group>"; };
 		A1000004 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
@@ -26,7 +28,7 @@
 		A1000008 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		A1000010 /* Preview Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "Preview Assets.xcassets"; sourceTree = "<group>"; };
 		A1000012 /* liblocalhawk_core_sim.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = liblocalhawk_core_sim.a; path = "../ios-libs/liblocalhawk_core_sim.a"; sourceTree = "<group>"; };
-		A1000013 /* LocalHawkiOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; name = LocalHawkiOS.app; path = LocalHawk.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A1000013 /* LocalHawk.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalHawk.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1000014 /* localhawk.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = localhawk.h; path = "../ios-libs/localhawk.h"; sourceTree = "<group>"; };
 		A1000015 /* LocalHawkiOS-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "LocalHawkiOS-Bridging-Header.h"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -36,7 +38,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1000011 /* liblocalhawk_core_sim.a in Frameworks */,
+				1E80600D2E8A5104009AF611 /* LocalHawkCore.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -70,7 +72,7 @@
 		A1000019 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				A1000013 /* LocalHawkiOS.app */,
+				A1000013 /* LocalHawk.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -78,6 +80,8 @@
 		A1000020 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				1E80600C2E8A5104009AF611 /* LocalHawkCore.xcframework */,
+				1E80600A2E89BB93009AF611 /* liblocalhawk_core_device.a */,
 				A1000012 /* liblocalhawk_core_sim.a */,
 				A1000014 /* localhawk.h */,
 			);
@@ -109,7 +113,7 @@
 			);
 			name = LocalHawkiOS;
 			productName = LocalHawkiOS;
-			productReference = A1000013 /* LocalHawkiOS.app */;
+			productReference = A1000013 /* LocalHawk.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -300,6 +304,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"LocalHawkiOS/Preview Content\"";
+				DEVELOPMENT_TEAM = V2A25N7292;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -313,7 +318,6 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../ios-libs",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.localhawk.LocalHawkiOS;
@@ -333,6 +337,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_ASSET_PATHS = "\"LocalHawkiOS/Preview Content\"";
+				DEVELOPMENT_TEAM = V2A25N7292;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -346,7 +351,6 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(PROJECT_DIR)/../ios-libs",
 				);
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.localhawk.LocalHawkiOS;

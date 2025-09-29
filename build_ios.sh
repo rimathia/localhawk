@@ -48,11 +48,30 @@ cp target/aarch64-apple-ios/release/liblocalhawk_core.a ios-libs/liblocalhawk_co
 echo "📋 Copying header file..."
 cp localhawk-core/include/localhawk.h ios-libs/
 
+# Create XCFramework (modern Apple solution for multi-architecture libraries)
+echo "🔗 Creating XCFramework..."
+rm -rf ios-libs/LocalHawkCore.xcframework
+
+# Create a temporary headers directory with just the header file
+mkdir -p ios-libs/temp-headers
+cp ios-libs/localhawk.h ios-libs/temp-headers/
+
+xcodebuild -create-xcframework \
+    -library ios-libs/liblocalhawk_core_sim.a \
+    -headers ios-libs/temp-headers \
+    -library ios-libs/liblocalhawk_core_device.a \
+    -headers ios-libs/temp-headers \
+    -output ios-libs/LocalHawkCore.xcframework
+
+# Clean up temporary directory
+rm -rf ios-libs/temp-headers
+
 echo "✅ Build complete!"
 echo ""
 echo "📁 Output files:"
 echo "   ios-libs/liblocalhawk_core_device.a  (for physical devices)"
 echo "   ios-libs/liblocalhawk_core_sim.a     (for simulator)"
+echo "   ios-libs/LocalHawkCore.xcframework   (universal framework - recommended)"
 echo "   ios-libs/localhawk.h                 (header file)"
 echo ""
 echo "🎯 Next steps:"

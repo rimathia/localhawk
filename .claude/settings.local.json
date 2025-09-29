@@ -36,7 +36,8 @@
       "Bash(xcrun simctl boot:*)",
       "Bash(log show:*)",
       "Bash(xcrun simctl spawn:*)",
-      "Bash(swift:*)"
+      "Bash(swift:*)",
+      "Bash(chmod:*)"
     ],
     "deny": []
   }
