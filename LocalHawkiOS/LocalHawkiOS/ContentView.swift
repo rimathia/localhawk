@@ -135,11 +135,11 @@ struct ContentView: View {
                 Spacer()
                 
                 // Simple test of FFI connection
-                VStack {
-                    Text("FFI Test Result: \(ProxyGenerator.testConnection())")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+//                VStack {
+//                    Text("FFI Test Result: \(ProxyGenerator.testConnection())")
+//                        .font(.caption)
+//                        .foregroundColor(.secondary)
+//                }
                 
                 // Hidden NavigationLink for proper navigation
                 NavigationLink(
